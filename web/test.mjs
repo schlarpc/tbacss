@@ -110,6 +110,25 @@ test('pareto respects an incoming mask', () => {
   assert.deepEqual(front, [0, 2]);
 });
 
+test('a mixed min/max frontier is coherent', () => {
+  // The shape a "more is better" measure takes: quiet AND heavy, which is the
+  // opposite corner from quiet-and-light and must select different rows.
+  const quietLight = paretoFront(CATALOG, [
+    { column: 'se_peak_dba', direction: 'min' },
+    { column: 'weight_oz', direction: 'min' },
+  ]);
+  const quietHeavy = paretoFront(CATALOG, [
+    { column: 'se_peak_dba', direction: 'min' },
+    { column: 'weight_oz', direction: 'max' },
+  ]);
+  // Row 1 (138.5 dBA, 22 oz) now dominates row 3 (138.5 dBA, 20 oz): equal on
+  // dBA, heavier on the axis being maximised. Rows 0 and 2 are worse on both.
+  assert.deepEqual(quietHeavy, [1]);
+  assert.notDeepEqual(quietHeavy, quietLight);
+  // Flipping one axis must not leave the frontier unchanged.
+  assert.ok(quietLight.includes(3) && !quietHeavy.includes(3));
+});
+
 test('a single objective yields the minimum', () => {
   const front = paretoFront(CATALOG, [
     { column: 'se_peak_dba', direction: 'min' },

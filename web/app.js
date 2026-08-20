@@ -23,26 +23,46 @@ import {
 const $ = (id) => document.getElementById(id);
 const P0 = 20e-6;
 
-/** Numeric columns offered on the axes, in the order they appear in menus. */
+/**
+ * Numeric columns offered on the axes: `[column, label, better]`.
+ *
+ * `better` is which way is desirable and belongs to the measure itself, not to
+ * the reader -- there is one right answer per column, so the frontier needs no
+ * configuring. Today every measure is a sound level or a physical dimension
+ * and they all minimise; a column where more is better (net reduction against
+ * the bare-muzzle baseline, say) is added with `'max'` and everything
+ * downstream follows.
+ *
+ * `null` means the column is a dimension rather than an objective. `year` is
+ * the one so far: a newer test is not a better one, so putting it on an axis
+ * switches the frontier off rather than pretending 2026 dominates 2023.
+ */
+const MINIMISE = 'min';
+const MAXIMISE = 'max';
+
 const MEASURES = [
-  ['se_peak_dba', "shooter's ear, peak dBA"],
-  ['se_peak_db', "shooter's ear, peak dB"],
-  ['se_peak_leq10ms_dba', "shooter's ear, Leq(10ms) dBA"],
-  ['se_impulse_db_ms', "shooter's ear, impulse dB·ms"],
-  ['ml_peak_db', 'mil left, peak dB'],
-  ['ml_peak_dba', 'mil left, peak dBA'],
-  ['ml_peak_leq10ms_dba', 'mil left, Leq(10ms) dBA'],
-  ['mr_peak_db', 'mil right, peak dB'],
-  ['mr_peak_dba', 'mil right, peak dBA'],
-  ['p225_peak_db', '225°, peak dB'],
-  ['p225_peak_dba', '225°, peak dBA'],
-  ['weight_oz', 'weight, oz'],
-  ['length_in', 'length, in'],
-  ['max_diameter_in', 'max diameter, in'],
-  ['vol_cuin', 'volume, cu in'],
-  ['year', 'year'],
+  ['se_peak_dba', "shooter's ear, peak dBA", MINIMISE],
+  ['se_peak_db', "shooter's ear, peak dB", MINIMISE],
+  ['se_peak_leq10ms_dba', "shooter's ear, Leq(10ms) dBA", MINIMISE],
+  ['se_impulse_db_ms', "shooter's ear, impulse dB·ms", MINIMISE],
+  ['ml_peak_db', 'mil left, peak dB', MINIMISE],
+  ['ml_peak_dba', 'mil left, peak dBA', MINIMISE],
+  ['ml_peak_leq10ms_dba', 'mil left, Leq(10ms) dBA', MINIMISE],
+  ['mr_peak_db', 'mil right, peak dB', MINIMISE],
+  ['mr_peak_dba', 'mil right, peak dBA', MINIMISE],
+  ['p225_peak_db', '225°, peak dB', MINIMISE],
+  ['p225_peak_dba', '225°, peak dBA', MINIMISE],
+  ['weight_oz', 'weight, oz', MINIMISE],
+  ['length_in', 'length, in', MINIMISE],
+  ['max_diameter_in', 'max diameter, in', MINIMISE],
+  ['vol_cuin', 'volume, cu in', MINIMISE],
+  ['year', 'year', null],
 ];
-const MEASURE_LABEL = new Map(MEASURES);
+const MEASURE_LABEL = new Map(MEASURES.map(([key, label]) => [key, label]));
+const BETTER = new Map(MEASURES.map(([key, , better]) => [key, better]));
+
+/** How to say a direction in a sentence. */
+const comparative = (key) => (BETTER.get(key) === MAXIMISE ? 'higher' : 'lower');
 
 // [key, header, numeric, optional] -- optional columns are hidden by CSS on a
 // narrow screen rather than forcing a twelve-column horizontal scroll.
@@ -292,17 +312,33 @@ function refilter() {
   state.mask = mask;
   state.visible = maskRows(catalog, mask);
 
-  const [xDir, yDir] = $('frontier-dir').value.split(',');
-  state.frontier = new Set(
-    paretoFront(
-      catalog,
-      [
-        { column: $('axis-x').value, direction: xDir },
-        { column: $('axis-y').value, direction: yDir },
-      ],
-      mask,
-    ),
-  );
+  // Each measure knows which way is better, so there is nothing to configure.
+  const xKey = $('axis-x').value;
+  const yKey = $('axis-y').value;
+  const xBetter = BETTER.get(xKey);
+  const yBetter = BETTER.get(yKey);
+  state.frontier =
+    xBetter && yBetter
+      ? new Set(
+          paretoFront(
+            catalog,
+            [
+              { column: xKey, direction: xBetter },
+              { column: yKey, direction: yBetter },
+            ],
+            mask,
+          ),
+        )
+      : new Set();
+
+  const dimension = !xBetter ? xKey : !yBetter ? yKey : null;
+  $('scatter-hint').textContent = dimension
+    ? `Points are test runs. No frontier here: ${MEASURE_LABEL.get(dimension)} `
+      + 'is a dimension, not something to optimise.'
+    : 'Points are test runs. Filled points are on the Pareto frontier — nothing '
+      + `in the current slice has both a ${comparative(xKey)} `
+      + `${MEASURE_LABEL.get(xKey)} and a ${comparative(yKey)} `
+      + `${MEASURE_LABEL.get(yKey)}.`;
 
   updateFilterBadges();
   renderTiles();
@@ -847,13 +883,16 @@ function fillAxisMenus() {
   });
   for (const [id, initial] of [['axis-x', 'weight_oz'], ['axis-y', 'se_peak_dba']]) {
     const select = $(id);
-    select.innerHTML = available
-      .map(([key, label]) => `<option value="${key}">${label}</option>`)
-      .join('');
+    select.textContent = '';
+    for (const [key, label] of available) {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = label;
+      select.append(option);
+    }
     select.value = initial;
     select.addEventListener('change', refilter);
   }
-  $('frontier-dir').addEventListener('change', refilter);
 }
 
 function countsFor(column) {

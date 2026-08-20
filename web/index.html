@@ -92,8 +92,7 @@
     <section class="card">
       <h2>Trade-off</h2>
       <p class="hint" id="scatter-hint">
-        Points are test runs. Filled points are on the Pareto frontier — nothing
-        in the current slice is better on both axes.
+        Points are test runs. Filled points are on the Pareto frontier.
       </p>
       <div class="axes">
         <label class="field grow">
@@ -103,15 +102,6 @@
         <label class="field grow">
           <span class="tiny">Y</span>
           <select id="axis-y"></select>
-        </label>
-        <label class="field grow">
-          <span class="tiny">Frontier</span>
-          <select id="frontier-dir">
-            <option value="min,min">low X, low Y</option>
-            <option value="min,max">low X, high Y</option>
-            <option value="max,min">high X, low Y</option>
-            <option value="max,max">high X, high Y</option>
-          </select>
         </label>
       </div>
       <div class="plot-wrap">
