@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Silencer Summit explorer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <h1>Silencer Summit explorer</h1>
+  <span class="sub" id="coverage">loading…</span>
+  <span class="spacer"></span>
+  <button id="theme" type="button" title="Switch light / dark">◐ theme</button>
+</header>
+
+<!-- One filter row above everything it scopes; every card re-renders
+     against the same slice. -->
+<section class="filters" id="filters" aria-label="Filters">
+  <div class="field">
+    <label for="q">Search</label>
+    <input id="q" type="search" placeholder="maker or model" size="18">
+  </div>
+  <div class="field">
+    <label id="lab-year">Year</label>
+    <div class="facet" id="facet-year" role="group" aria-labelledby="lab-year"></div>
+  </div>
+  <div class="field">
+    <label id="lab-caliber">Suppressor calibre</label>
+    <div class="facet" id="facet-caliber" role="group" aria-labelledby="lab-caliber"></div>
+  </div>
+  <div class="field">
+    <label id="lab-cartridge">Host / cartridge</label>
+    <div class="facet" id="facet-cartridge" role="group" aria-labelledby="lab-cartridge"></div>
+  </div>
+  <div class="field">
+    <label id="lab-manufacturer">Manufacturer</label>
+    <div class="facet" id="facet-manufacturer" role="group" aria-labelledby="lab-manufacturer"></div>
+  </div>
+  <div class="field">
+    <label for="min-weight">Weight, oz</label>
+    <div class="range">
+      <input id="min-weight" type="number" step="0.1" placeholder="min">
+      <span>–</span>
+      <input id="max-weight" type="number" step="0.1" placeholder="max">
+    </div>
+  </div>
+  <div class="field">
+    <label for="min-length">Length, in</label>
+    <div class="range">
+      <input id="min-length" type="number" step="0.1" placeholder="min">
+      <span>–</span>
+      <input id="max-length" type="number" step="0.1" placeholder="max">
+    </div>
+  </div>
+  <div class="field">
+    <label for="baselines">Reference runs</label>
+    <select id="baselines">
+      <option value="hide">hide references</option>
+      <option value="show">show references</option>
+      <option value="only">references only</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="reset">&nbsp;</label>
+    <button id="reset" type="button">Clear filters</button>
+  </div>
+</section>
+
+<main>
+  <div class="tiles" id="tiles"></div>
+
+  <div class="row">
+    <section class="card">
+      <h2>Trade-off</h2>
+      <p class="hint" id="scatter-hint">
+        Points are test runs. Filled points are on the Pareto frontier — nothing
+        in the current slice is better on both axes.
+      </p>
+      <div class="axes">
+        <label class="field">
+          <span style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted)">X</span>
+          <select id="axis-x"></select>
+        </label>
+        <label class="field">
+          <span style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted)">Y</span>
+          <select id="axis-y"></select>
+        </label>
+        <label class="field">
+          <span style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted)">Frontier</span>
+          <select id="frontier-dir">
+            <option value="min,min">low X, low Y</option>
+            <option value="min,max">low X, high Y</option>
+            <option value="max,min">high X, low Y</option>
+            <option value="max,max">high X, high Y</option>
+          </select>
+        </label>
+      </div>
+      <div class="plot-wrap">
+        <canvas id="scatter" height="420"></canvas>
+        <div class="tooltip" id="scatter-tip" hidden></div>
+      </div>
+      <div class="legend">
+        <span class="item"><span class="swatch" style="background:var(--series-1)"></span>on frontier</span>
+        <span class="item"><span class="swatch" style="background:var(--dot-strong)"></span>other runs</span>
+        <span class="item"><span class="swatch" style="background:var(--series-2)"></span>selected</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 id="wave-title">Waveforms</h2>
+      <p class="hint" id="wave-hint">Pick a run to load its traces.</p>
+      <div class="plot-wrap">
+        <canvas id="wave" height="300"></canvas>
+        <div class="tooltip" id="wave-tip" hidden></div>
+      </div>
+      <div class="legend" id="wave-legend"></div>
+      <div class="shots" id="shots"></div>
+      <div id="derived" hidden>
+        <p class="hint" style="margin-top:14px">
+          Impulse and Leq are not published in the bundle — they are computed
+          here from the full-rate samples, so the window is yours to change.
+        </p>
+        <div class="plot-wrap"><canvas id="impulse" height="150"></canvas></div>
+        <div class="plot-wrap"><canvas id="leq" height="150"></canvas></div>
+      </div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Runs</h2>
+    <p class="hint" id="table-hint">The table view: every value on the chart, readable without colour.</p>
+    <div class="table-wrap">
+      <table id="table">
+        <thead><tr id="table-head"></tr></thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<footer id="footnote"></footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,211 @@
+/* Palette values come from the dataviz reference instance and were validated
+   with scripts/validate_palette.js at 3 slots, --pairs all, in both modes.
+   Light-mode aqua sits below 3:1 on the surface, so mic traces carry visible
+   direct labels and every value is also reachable in the table view. */
+:root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --page: #f9f9f7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.1);
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --dot: #b6b5ae;
+  --dot-strong: #898781;
+  --wash: rgba(42, 120, 214, 0.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.1);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --dot: #55544f;
+    --dot-strong: #898781;
+    --wash: rgba(57, 135, 229, 0.14);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-1: #1a1a19;
+  --page: #0d0d0d;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.1);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --dot: #55544f;
+  --dot-strong: #898781;
+  --wash: rgba(57, 135, 229, 0.14);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 20px 24px 12px;
+}
+header h1 { font-size: 17px; font-weight: 600; margin: 0; }
+header .sub { color: var(--text-secondary); font-size: 13px; }
+header .spacer { flex: 1; }
+
+button, select, input {
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+button { cursor: pointer; }
+button:hover { background: var(--wash); }
+button[aria-pressed="true"] { background: var(--wash); border-color: var(--series-1); }
+
+/* One filter row above everything it scopes. */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 18px;
+  align-items: flex-end;
+  padding: 10px 24px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field > label {
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.facet {
+  min-width: 130px;
+  max-height: 108px;
+  overflow-y: auto;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+.facet label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 0;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.range { display: flex; align-items: center; gap: 4px; }
+.range input { width: 66px; }
+.range span { color: var(--text-muted); }
+
+main { padding: 16px 24px 48px; display: grid; gap: 16px; }
+.row { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+@media (max-width: 1100px) { .row { grid-template-columns: minmax(0, 1fr); } }
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px 16px;
+  min-width: 0;
+}
+.card h2 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+.card .hint { font-size: 12px; color: var(--text-muted); margin: 0 0 10px; }
+
+/* Stat tiles: the number is the chart. Proportional figures, not tabular. */
+.tiles { display: flex; flex-wrap: wrap; gap: 12px; }
+.tile {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 16px;
+  min-width: 120px;
+}
+.tile .value { font-size: 24px; font-weight: 600; line-height: 1.15; }
+.tile .label { font-size: 12px; color: var(--text-secondary); }
+
+.axes { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+
+canvas { display: block; width: 100%; touch-action: none; }
+.plot-wrap { position: relative; }
+
+.tooltip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+  max-width: 260px;
+}
+.tooltip strong { font-weight: 600; }
+.tooltip .dim { color: var(--text-secondary); }
+.tooltip[hidden] { display: none; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0 0; font-size: 12px; }
+.legend .item { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+.swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+.table-wrap { overflow: auto; max-height: 460px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td {
+  text-align: left;
+  padding: 5px 10px 5px 0;
+  border-bottom: 1px solid var(--grid);
+  white-space: nowrap;
+}
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-1);
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--wash); }
+tbody tr[aria-selected="true"] { background: var(--wash); }
+tbody tr.frontier td:first-child { box-shadow: inset 3px 0 0 var(--series-1); }
+
+.shots { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.empty { color: var(--text-muted); font-size: 13px; padding: 28px 0; text-align: center; }
+footer { padding: 0 24px 32px; color: var(--text-muted); font-size: 12px; }
+footer a { color: inherit; }
