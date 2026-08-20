@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tbacss"
+version = "0.1.0"
+description = "Parse TBAC Silencer Summit release sets into SQLite"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+analysis = ["scipy>=1.10"]     # python -m tbacss verify
+export = ["pandas>=2.0"]       # python -m tbacss export
+dev = ["pytest>=7"]
+
+[project.scripts]
+tbacss = "tbacss.__main__:main"
+
+[tool.setuptools]
+packages = ["tbacss"]
+
+[tool.setuptools.package-data]
+tbacss = ["schema.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# This environment ships a pytest-black build that is incompatible with the
+# installed pluggy; it has nothing to do with these tests.
+addopts = "-p no:black"
