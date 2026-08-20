@@ -123,7 +123,10 @@ def _cmd_analyze(args) -> int:
                 failed += 1
                 sys.stderr.write(f"\n  waveform {row['id']}: {error}\n")
                 continue
-            to_db = lambda v: float(20.0 * np.log10(v / P_0))  # noqa: E731
+            # A level needs a positive pressure; a few very quiet records
+            # integrate to exactly zero impulse under the reference window.
+            def to_db(value):
+                return float(20.0 * np.log10(value / P_0)) if value > 0 else None
             write.execute(
                 """INSERT OR REPLACE INTO shot_metric
                        (waveform_id, peak_pa, peak_a_pa, impulse_pa_ms, peak_leq_pa,

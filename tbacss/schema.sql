@@ -101,16 +101,22 @@ CREATE INDEX IF NOT EXISTS waveform_by_run ON waveform (test_run_id, mic, shot);
 -- shot-to-shot spread, which is what makes a difference of a few tenths of a
 -- dB between two suppressors interpretable.  Linear units, so they average the
 -- way the reference code averages them.
+-- The dB columns are nullable: a level is only defined for a positive linear
+-- value.  33 very quiet records -- mostly .22LR -- integrate to exactly zero
+-- impulse, because the reference method ends the impulse window at the trough
+-- of the running integral and for those the trough is the first sample.  That
+-- is TBAC's own behaviour (verify agrees with their published averages), so
+-- the linear 0.0 is kept and the dB is left NULL rather than stored as -inf.
 CREATE TABLE IF NOT EXISTS shot_metric (
     waveform_id     INTEGER PRIMARY KEY REFERENCES waveform(id) ON DELETE CASCADE,
     peak_pa         REAL NOT NULL,
     peak_a_pa       REAL NOT NULL,
     impulse_pa_ms   REAL NOT NULL,
     peak_leq_pa     REAL NOT NULL,
-    peak_db         REAL NOT NULL,
-    peak_dba        REAL NOT NULL,
-    impulse_db_ms   REAL NOT NULL,
-    peak_leq10ms_dba REAL NOT NULL
+    peak_db         REAL,
+    peak_dba        REAL,
+    impulse_db_ms   REAL,
+    peak_leq10ms_dba REAL
 ) WITHOUT ROWID;
 
 -- Runs joined to their published numbers, one row per run per mic.

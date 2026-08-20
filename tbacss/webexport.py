@@ -30,6 +30,7 @@ whatever windowing was baked in at publish time.
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -109,6 +110,18 @@ class PublishReport:
             " (the .bin files are range-fetched on demand)",
         ]
         return "\n".join(lines)
+
+
+def _finite(values: list) -> list:
+    """Replace non-finite floats with None.
+
+    json.dumps happily writes ``-Infinity`` and ``NaN``, which no JSON parser
+    accepts -- the browser's fetch().json() rejects the whole file. Guard the
+    boundary rather than trusting every upstream column to be clean.
+    """
+    return [
+        None if isinstance(v, float) and not math.isfinite(v) else v for v in values
+    ]
 
 
 def _encode_text_column(values: list) -> tuple[list[str], list[int]]:
@@ -208,7 +221,7 @@ def publish(
             catalog["dictionaries"][column] = dictionary
             catalog["columns"][column] = codes
         for column in _NUMERIC_COLUMNS:
-            catalog["columns"][column] = [r[column] for r in runs]
+            catalog["columns"][column] = _finite([r[column] for r in runs])
 
         datasets = db.query("SELECT year, name, report_url, archive_sha256 FROM dataset")
         catalog["datasets"] = [dict(d) for d in datasets]
@@ -228,7 +241,7 @@ def publish(
         shot_table["dictionaries"]["mic"] = mics
         shot_table["columns"]["mic"] = codes
         for column in _SHOT_NUMERIC_COLUMNS:
-            shot_table["columns"][column] = [s[column] for s in shots]
+            shot_table["columns"][column] = _finite([s[column] for s in shots])
 
         # -- waveform tiers --------------------------------------------------
         index = db.query(
