@@ -16,42 +16,59 @@
 </header>
 
 <!-- One filter row above everything it scopes; every card re-renders
-     against the same slice. -->
+     against the same slice. On a phone it collapses behind a toggle so the
+     data is above the fold, and each dimension is its own disclosure rather
+     than four stacked scroll boxes. -->
+<button id="filter-toggle" class="filter-toggle" type="button"
+        aria-expanded="false" aria-controls="filters">
+  Filters <span id="filter-count" class="badge" hidden></span>
+</button>
+
 <section class="filters" id="filters" aria-label="Filters">
-  <div class="field">
+  <div class="field grow">
     <label for="q">Search</label>
-    <input id="q" type="search" placeholder="maker or model" size="18">
+    <input id="q" type="search" placeholder="maker or model" autocomplete="off">
+  </div>
+
+  <div class="field">
+    <details class="facet-group" id="det-year">
+      <summary>Year <span class="badge" id="count-year" hidden></span></summary>
+      <div class="facet" id="facet-year" role="group" aria-label="Year"></div>
+    </details>
   </div>
   <div class="field">
-    <label id="lab-year">Year</label>
-    <div class="facet" id="facet-year" role="group" aria-labelledby="lab-year"></div>
+    <details class="facet-group" id="det-caliber">
+      <summary>Calibre <span class="badge" id="count-caliber" hidden></span></summary>
+      <div class="facet" id="facet-caliber" role="group" aria-label="Suppressor calibre"></div>
+    </details>
   </div>
   <div class="field">
-    <label id="lab-caliber">Suppressor calibre</label>
-    <div class="facet" id="facet-caliber" role="group" aria-labelledby="lab-caliber"></div>
+    <details class="facet-group" id="det-cartridge">
+      <summary>Host <span class="badge" id="count-cartridge" hidden></span></summary>
+      <div class="facet" id="facet-cartridge" role="group" aria-label="Host or cartridge"></div>
+    </details>
   </div>
   <div class="field">
-    <label id="lab-cartridge">Host / cartridge</label>
-    <div class="facet" id="facet-cartridge" role="group" aria-labelledby="lab-cartridge"></div>
+    <details class="facet-group" id="det-manufacturer">
+      <summary>Maker <span class="badge" id="count-manufacturer" hidden></span></summary>
+      <div class="facet" id="facet-manufacturer" role="group" aria-label="Manufacturer"></div>
+    </details>
   </div>
-  <div class="field">
-    <label id="lab-manufacturer">Manufacturer</label>
-    <div class="facet" id="facet-manufacturer" role="group" aria-labelledby="lab-manufacturer"></div>
-  </div>
+
   <div class="field">
     <label for="min-weight">Weight, oz</label>
     <div class="range">
-      <input id="min-weight" type="number" step="0.1" placeholder="min">
+      <input id="min-weight" type="number" inputmode="decimal" step="0.1" placeholder="min">
       <span>–</span>
-      <input id="max-weight" type="number" step="0.1" placeholder="max">
+      <input id="max-weight" type="number" inputmode="decimal" step="0.1" placeholder="max">
     </div>
   </div>
   <div class="field">
     <label for="min-length">Length, in</label>
     <div class="range">
-      <input id="min-length" type="number" step="0.1" placeholder="min">
+      <input id="min-length" type="number" inputmode="decimal" step="0.1" placeholder="min">
       <span>–</span>
-      <input id="max-length" type="number" step="0.1" placeholder="max">
+      <input id="max-length" type="number" inputmode="decimal" step="0.1" placeholder="max">
     </div>
   </div>
   <div class="field">
@@ -63,7 +80,7 @@
     </select>
   </div>
   <div class="field">
-    <label for="reset">&nbsp;</label>
+    <label aria-hidden="true">&nbsp;</label>
     <button id="reset" type="button">Clear filters</button>
   </div>
 </section>
@@ -79,16 +96,16 @@
         in the current slice is better on both axes.
       </p>
       <div class="axes">
-        <label class="field">
-          <span style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted)">X</span>
+        <label class="field grow">
+          <span class="tiny">X</span>
           <select id="axis-x"></select>
         </label>
-        <label class="field">
-          <span style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted)">Y</span>
+        <label class="field grow">
+          <span class="tiny">Y</span>
           <select id="axis-y"></select>
         </label>
-        <label class="field">
-          <span style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted)">Frontier</span>
+        <label class="field grow">
+          <span class="tiny">Frontier</span>
           <select id="frontier-dir">
             <option value="min,min">low X, low Y</option>
             <option value="min,max">low X, high Y</option>

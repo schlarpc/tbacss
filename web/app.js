@@ -44,19 +44,21 @@ const MEASURES = [
 ];
 const MEASURE_LABEL = new Map(MEASURES);
 
+// [key, header, numeric, optional] -- optional columns are hidden by CSS on a
+// narrow screen rather than forcing a twelve-column horizontal scroll.
 const TABLE_COLUMNS = [
-  ['year', 'Year', true],
-  ['manufacturer', 'Maker', false],
-  ['suppressor', 'Model', false],
-  ['caliber', 'Cal', false],
-  ['cartridge', 'Host', false],
-  ['se_peak_dba', 'SE dBA', true],
-  ['se_peak_db', 'SE dB', true],
-  ['se_peak_leq10ms_dba', 'SE Leq', true],
-  ['ml_peak_db', 'ML dB', true],
-  ['weight_oz', 'oz', true],
-  ['length_in', 'in', true],
-  ['vol_cuin', 'cu in', true],
+  ['year', 'Year', true, false],
+  ['manufacturer', 'Maker', false, false],
+  ['suppressor', 'Model', false, false],
+  ['caliber', 'Cal', false, true],
+  ['cartridge', 'Host', false, true],
+  ['se_peak_dba', 'SE dBA', true, false],
+  ['se_peak_db', 'SE dB', true, true],
+  ['se_peak_leq10ms_dba', 'SE Leq', true, true],
+  ['ml_peak_db', 'ML dB', true, true],
+  ['weight_oz', 'oz', true, false],
+  ['length_in', 'in', true, true],
+  ['vol_cuin', 'cu in', true, true],
 ];
 const MAX_TABLE_ROWS = 400;
 
@@ -70,6 +72,7 @@ const state = {
   envelopes: null,
   sort: { column: 'se_peak_dba', direction: 1 },
   hover: null,
+  filtersOpen: false,
 };
 
 /* ------------------------------------------------------------------ helpers */
@@ -87,11 +90,23 @@ function runLabel(index) {
   return `${maker} ${model}`;
 }
 
+const NARROW = '(max-width: 720px)';
+const isNarrow = () => window.matchMedia(NARROW).matches;
+
+/** Plot heights shrink on a phone so a chart still fits a screen. */
+const PLOT_HEIGHTS = {
+  scatter: [420, 300],
+  wave: [300, 210],
+  impulse: [150, 120],
+  leq: [150, 120],
+};
+
 /** Size a canvas to its layout box at device pixel ratio. */
 function prepare(canvas) {
   const ratio = window.devicePixelRatio || 1;
   const width = canvas.clientWidth;
-  const height = Number(canvas.getAttribute('height'));
+  const sizes = PLOT_HEIGHTS[canvas.id];
+  const height = sizes ? sizes[isNarrow() ? 1 : 0] : Number(canvas.getAttribute('height'));
   canvas.width = Math.round(width * ratio);
   canvas.height = Math.round(height * ratio);
   canvas.style.height = `${height}px`;
@@ -213,6 +228,36 @@ function currentSpec() {
   return spec;
 }
 
+const FACETS = [
+  ['year', 'facet-year', 'count-year'],
+  ['caliber', 'facet-caliber', 'count-caliber'],
+  ['cartridge', 'facet-cartridge', 'count-cartridge'],
+  ['manufacturer', 'facet-manufacturer', 'count-manufacturer'],
+];
+
+/**
+ * Show how many boxes are ticked per dimension, and in total on the collapsed
+ * toggle -- otherwise a phone user cannot tell a filtered view from a full one.
+ */
+function updateFilterBadges() {
+  let total = 0;
+  for (const [, facetId, countId] of FACETS) {
+    const count = checked(facetId).length;
+    total += count;
+    const badge = $(countId);
+    badge.textContent = String(count);
+    badge.hidden = count === 0;
+  }
+  for (const id of ['q', 'min-weight', 'max-weight', 'min-length', 'max-length']) {
+    if ($(id).value.trim()) total++;
+  }
+  if ($('baselines').value !== 'hide') total++;
+
+  const badge = $('filter-count');
+  badge.textContent = String(total);
+  badge.hidden = total === 0;
+}
+
 function refilter() {
   const { catalog } = state.bundle;
   const spec = currentSpec();
@@ -259,6 +304,7 @@ function refilter() {
     ),
   );
 
+  updateFilterBadges();
   renderTiles();
   renderScatter();
   renderTable();
@@ -366,12 +412,56 @@ function renderScatter() {
   }
 }
 
+/**
+ * Fill and place the scatter tooltip.
+ *
+ * Names come from the published bundle, which is ultimately somebody's CSV, so
+ * they are inserted as text and never as markup.
+ */
+function showTooltip(tip, canvas, point) {
+  const { catalog } = state.bundle;
+  const i = point.i;
+  const xKey = $('axis-x').value;
+  const yKey = $('axis-y').value;
+  const dict = (name) => catalog.dictionaries[name][catalog.columns[name][i]] ?? '—';
+
+  tip.textContent = '';
+  const title = document.createElement('strong');
+  title.textContent = runLabel(i);
+  const context = document.createElement('div');
+  context.className = 'dim';
+  context.textContent =
+    `${dict('caliber')} on ${dict('cartridge')} · ${catalog.columns.year[i]}`;
+  tip.append(title, context);
+
+  for (const key of [xKey, yKey]) {
+    const line = document.createElement('div');
+    line.append(document.createTextNode(`${MEASURE_LABEL.get(key)}: `));
+    const value = document.createElement('strong');
+    value.textContent = fmt(catalog.columns[key][i]);
+    line.append(value);
+    tip.append(line);
+  }
+  if (state.frontier.has(i)) {
+    const note = document.createElement('div');
+    note.className = 'dim';
+    note.textContent = 'on the frontier';
+    tip.append(note);
+  }
+
+  tip.hidden = false;
+  const wrap = canvas.parentElement.getBoundingClientRect();
+  tip.style.left = `${Math.max(4, Math.min(point.x + 14, wrap.width - tip.offsetWidth - 6))}px`;
+  tip.style.top = `${Math.max(4, Math.min(point.y - 10, wrap.height - tip.offsetHeight - 4))}px`;
+}
+
 function nearestPoint(event) {
   const rect = $('scatter').getBoundingClientRect();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
   let best = null;
-  let bestDistance = 26 * 26; // generous hit area, not a pinpoint target
+  const reach = isNarrow() ? 34 : 26; // generous hit area, not a pinpoint target
+  let bestDistance = reach * reach;
   for (const point of scatterPoints) {
     const distance = (point.x - x) ** 2 + (point.y - y) ** 2;
     if (distance < bestDistance) {
@@ -386,7 +476,22 @@ function bindScatter() {
   const canvas = $('scatter');
   const tip = $('scatter-tip');
 
+  // Touch has no hover, so a tap does both jobs: it selects the run and leaves
+  // the readout on screen until the next tap.
+  canvas.addEventListener('pointerdown', (event) => {
+    if (event.pointerType !== 'touch') return;
+    const point = nearestPoint(event);
+    if (!point) {
+      tip.hidden = true;
+      return;
+    }
+    state.hover = point.i;
+    showTooltip(tip, canvas, point);
+    selectRun(point.i);
+  });
+
   canvas.addEventListener('pointermove', (event) => {
+    if (event.pointerType === 'touch') return;
     const point = nearestPoint(event);
     state.hover = point ? point.i : null;
     if (!point) {
@@ -394,32 +499,22 @@ function bindScatter() {
       renderScatter();
       return;
     }
-    const { catalog } = state.bundle;
-    const i = point.i;
-    const xKey = $('axis-x').value;
-    const yKey = $('axis-y').value;
-    tip.innerHTML =
-      `<strong>${runLabel(i)}</strong><br>` +
-      `<span class="dim">${catalog.dictionaries.caliber[catalog.columns.caliber[i]]} on ` +
-      `${catalog.dictionaries.cartridge[catalog.columns.cartridge[i]]} · ` +
-      `${catalog.columns.year[i]}</span><br>` +
-      `${MEASURE_LABEL.get(xKey)}: <strong>${fmt(catalog.columns[xKey][i])}</strong><br>` +
-      `${MEASURE_LABEL.get(yKey)}: <strong>${fmt(catalog.columns[yKey][i])}</strong>` +
-      (state.frontier.has(i) ? '<br><span class="dim">on the frontier</span>' : '');
-    tip.hidden = false;
-    const wrap = canvas.parentElement.getBoundingClientRect();
-    tip.style.left = `${Math.min(point.x + 14, wrap.width - tip.offsetWidth - 6)}px`;
-    tip.style.top = `${Math.max(point.y - 10, 4)}px`;
+    showTooltip(tip, canvas, point);
     renderScatter();
   });
 
-  canvas.addEventListener('pointerleave', () => {
+  canvas.addEventListener('pointerleave', (event) => {
+    // A touch pointer is destroyed on lift, which fires pointerleave straight
+    // after the tap. Keeping the readout up until the next tap is the point.
+    if (event.pointerType === 'touch') return;
     state.hover = null;
     tip.hidden = true;
     renderScatter();
   });
 
   canvas.addEventListener('click', (event) => {
+    // Touch already handled this on pointerdown.
+    if (event.pointerType === 'touch') return;
     const point = nearestPoint(event);
     if (point) selectRun(point.i);
   });
@@ -430,20 +525,23 @@ function bindScatter() {
 function renderTable() {
   const { catalog } = state.bundle;
   const head = $('table-head');
-  head.innerHTML = TABLE_COLUMNS.map(
-    ([key, label, numeric]) =>
-      `<th class="${numeric ? 'num' : ''}" data-key="${key}" scope="col">${label}` +
-      `${state.sort.column === key ? (state.sort.direction > 0 ? ' ▲' : ' ▼') : ''}</th>`,
-  ).join('');
-  for (const th of head.querySelectorAll('th')) {
+  head.textContent = '';
+  for (const [key, label, numeric, optional] of TABLE_COLUMNS) {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    if (numeric) th.className = 'num';
+    if (optional) th.dataset.optional = '';
+    th.dataset.key = key;
+    th.textContent =
+      label + (state.sort.column === key ? (state.sort.direction > 0 ? ' ▲' : ' ▼') : '');
     th.addEventListener('click', () => {
-      const key = th.dataset.key;
       state.sort = {
         column: key,
         direction: state.sort.column === key ? -state.sort.direction : 1,
       };
       renderTable();
     });
+    head.append(th);
   }
 
   const key = state.sort.column;
@@ -468,27 +566,28 @@ function renderTable() {
       ? `The table view: every value on the chart, readable without colour. Showing the first ${shown.length} of ${order.length} matching runs — narrow the filters to see the rest.`
       : 'The table view: every value on the chart, readable without colour.';
 
-  $('table-body').innerHTML = shown
-    .map((i) => {
-      const cells = TABLE_COLUMNS.map(([columnKey, , numeric]) => {
-        const values = catalog.columns[columnKey];
-        const dict = catalog.dictionaries[columnKey];
-        const raw = dict ? dict[values[i]] ?? '—' : values[i];
-        const text = dict
-          ? raw
-          : columnKey === 'year'
-            ? String(raw)
-            : fmt(raw, columnKey === 'weight_oz' || columnKey.endsWith('_in') || columnKey === 'vol_cuin' ? 2 : 2);
-        return `<td class="${numeric ? 'num' : ''}">${text}</td>`;
-      }).join('');
-      return `<tr data-index="${i}" class="${state.frontier.has(i) ? 'frontier' : ''}" ${
-        state.selectedRun === i ? 'aria-selected="true"' : ''
-      }>${cells}</tr>`;
-    })
-    .join('');
+  const body = $('table-body');
+  body.textContent = '';
+  for (const i of shown) {
+    const tr = document.createElement('tr');
+    if (state.frontier.has(i)) tr.className = 'frontier';
+    if (state.selectedRun === i) tr.setAttribute('aria-selected', 'true');
+    tr.addEventListener('click', () => selectRun(i));
 
-  for (const tr of $('table-body').querySelectorAll('tr')) {
-    tr.addEventListener('click', () => selectRun(Number(tr.dataset.index)));
+    for (const [columnKey, , numeric, optional] of TABLE_COLUMNS) {
+      const td = document.createElement('td');
+      if (numeric) td.className = 'num';
+      if (optional) td.dataset.optional = '';
+      const dict = catalog.dictionaries[columnKey];
+      const raw = catalog.columns[columnKey][i];
+      td.textContent = dict
+        ? dict[raw] ?? '—'
+        : columnKey === 'year'
+          ? String(raw)
+          : fmt(raw);
+      tr.append(td);
+    }
+    body.append(tr);
   }
 }
 
@@ -609,14 +708,17 @@ function renderEnvelopes() {
     ctx.fillText(mic, box.right + 6, py(peak));
   }
 
-  $('wave-legend').innerHTML = [...byMic.keys()]
-    .map(
-      (mic) =>
-        `<span class="item"><span class="swatch" style="background:var(${
-          MIC_COLOR[mic] ?? '--series-1'
-        })"></span>${mic}</span>`,
-    )
-    .join('');
+  const legend = $('wave-legend');
+  legend.textContent = '';
+  for (const mic of byMic.keys()) {
+    const item = document.createElement('span');
+    item.className = 'item';
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.background = `var(${MIC_COLOR[mic] ?? '--series-1'})`;
+    item.append(swatch, document.createTextNode(mic));
+    legend.append(item);
+  }
 }
 
 function renderShotButtons() {
@@ -705,6 +807,13 @@ function drawSeries(canvas, count, t0, stepMs, values, label, colorVar) {
  * Stamp a theme and redraw. Canvas colours are read at paint time, so every
  * plot has to be re-rendered rather than restyled.
  */
+/** Repaint every canvas; they read colours and sizes at paint time. */
+function redraw() {
+  renderScatter();
+  if (state.envelopes) renderEnvelopes();
+  else drawPlaceholder($('wave'), 'Pick a run from the chart or table');
+}
+
 function applyTheme(theme) {
   if (theme) {
     document.documentElement.dataset.theme = theme;
@@ -714,8 +823,7 @@ function applyTheme(theme) {
       // Private mode or a blocked origin; the stamp still applies for this view.
     }
   }
-  renderScatter();
-  if (state.envelopes) renderEnvelopes();
+  redraw();
 }
 
 /** `?theme=light|dark` wins over the stored choice, which wins over the OS. */
@@ -798,12 +906,21 @@ async function main() {
   const yearsCovered = datasets.map((d) => d.year).sort();
   $('coverage').textContent =
     `${catalog.n.toLocaleString()} test runs · ${yearsCovered[0]}–${yearsCovered.at(-1)}`;
-  $('footnote').innerHTML =
+  const footnote = $('footnote');
+  footnote.textContent =
     `Sound data from the ${yearsCovered.join(', ')} TBAC Silencer Summits, ` +
-    `Thunder Beast Arms Corporation. ` +
-    datasets
-      .map((d) => `<a href="${d.report_url}" rel="noreferrer">${d.year} report</a>`)
-      .join(' · ');
+    'Thunder Beast Arms Corporation. ';
+  datasets.forEach((dataset, position) => {
+    if (position) footnote.append(document.createTextNode(' · '));
+    const link = document.createElement('a');
+    // href is set as a property, and only for http(s), so a hostile bundle
+    // cannot smuggle in a javascript: URL.
+    const url = String(dataset.report_url ?? '');
+    if (/^https?:\/\//i.test(url)) link.href = url;
+    link.rel = 'noreferrer';
+    link.textContent = `${dataset.year} report`;
+    footnote.append(link);
+  });
 
   $('theme').addEventListener('click', () => {
     const root = document.documentElement;
@@ -811,38 +928,83 @@ async function main() {
     applyTheme(dark ? 'light' : 'dark');
   });
 
+  // The filter panel starts collapsed on a phone so the data is above the
+  // fold, and is always open on a wide screen where it costs one row.
+  const narrow = window.matchMedia(NARROW);
+  const applyLayout = () => {
+    const small = narrow.matches;
+    $('filters').hidden = small && !state.filtersOpen;
+    $('filter-toggle').setAttribute('aria-expanded', String(!small || state.filtersOpen));
+    for (const [, facetId] of FACETS) {
+      $(facetId).closest('details').open = !small;
+    }
+  };
+  $('filter-toggle').addEventListener('click', () => {
+    state.filtersOpen = !state.filtersOpen;
+    applyLayout();
+  });
+  narrow.addEventListener('change', () => {
+    state.filtersOpen = false;
+    applyLayout();
+    redraw();
+  });
+  applyLayout();
+
+  let resizeTimer = null;
   window.addEventListener('resize', () => {
-    renderScatter();
-    if (state.envelopes) renderEnvelopes();
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(redraw, 120);
   });
 
   drawPlaceholder($('wave'), 'Pick a run from the chart or table');
   refilter();
 
-  const requested = new URLSearchParams(location.hash.slice(1)).get('run');
-  if (requested !== null) {
-    const index = catalog.ids.indexOf(Number(requested));
-    if (index >= 0) {
-      // A deep-linked run may sit outside the default slice, so widen enough
-      // to show it rather than selecting something invisible.
-      if (!state.mask[index]) {
-        $('baselines').value = 'show';
-        refilter();
-      }
-      await selectRun(index, { updateHash: false });
+  await applyDeepLink();
+  // A pasted #run= link on an already-open page is a navigation too.
+  window.addEventListener('hashchange', () => {
+    applyDeepLink().catch((error) => console.error(error));
+  });
+}
 
-      const shot = new URLSearchParams(location.hash.slice(1)).get('shot');
-      if (shot !== null) {
-        const entry = state.bundle.byId.get(Number(shot));
-        if (entry) await loadFullRate(entry, { updateHash: false });
-      }
-    }
+/** Select whatever `#run=…&shot=…` names, if anything. */
+async function applyDeepLink() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const requested = params.get('run');
+  if (requested === null) return;
+
+  const index = state.bundle.catalog.ids.indexOf(Number(requested));
+  if (index < 0) return;
+  if (index === state.selectedRun && !params.get('shot')) return;
+
+  // A deep-linked run may sit outside the current slice, so widen enough to
+  // show it rather than selecting something invisible.
+  if (!state.mask[index]) {
+    $('baselines').value = 'show';
+    refilter();
+  }
+  await selectRun(index, { updateHash: false });
+
+  const shot = params.get('shot');
+  if (shot !== null) {
+    const entry = state.bundle.byId.get(Number(shot));
+    if (entry) await loadFullRate(entry, { updateHash: false });
   }
 }
 
 main().catch((error) => {
-  document.querySelector('main').innerHTML =
-    `<div class="card"><h2>Could not load the bundle</h2><p class="hint">${error.message}</p>` +
-    `<p class="hint">Run <code>python -m tbacss publish tbacss.db web/data</code> first.</p></div>`;
+  const main = document.querySelector('main');
+  main.textContent = '';
+  const card = document.createElement('div');
+  card.className = 'card';
+  const title = document.createElement('h2');
+  title.textContent = 'Could not load the bundle';
+  const detail = document.createElement('p');
+  detail.className = 'hint';
+  detail.textContent = error.message;
+  const fix = document.createElement('p');
+  fix.className = 'hint';
+  fix.textContent = 'Run `python -m tbacss publish tbacss.db web/data` first.';
+  card.append(title, detail, fix);
+  main.append(card);
   console.error(error);
 });

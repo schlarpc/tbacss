@@ -98,16 +98,58 @@ button[aria-pressed="true"] { background: var(--wash); border-color: var(--serie
   border-bottom: 1px solid var(--border);
 }
 .field { display: flex; flex-direction: column; gap: 4px; }
-.field > label {
+.field.grow { flex: 1 1 150px; min-width: 0; }
+.field > label,
+.tiny {
   font-size: 11px;
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
+.field.grow > select, .field.grow > input { width: 100%; }
+
+/* Each dimension is its own disclosure, so four facets do not stack into a
+   wall of scroll boxes. */
+.facet-group > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.facet-group > summary::-webkit-details-marker { display: none; }
+.facet-group > summary::after {
+  content: "▾";
+  color: var(--text-muted);
+  font-size: 10px;
+  margin-left: auto;
+}
+.facet-group[open] > summary::after { content: "▴"; }
+.facet-group[open] > summary { border-color: var(--series-1); }
+
+.badge {
+  background: var(--series-1);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.badge[hidden] { display: none; }
+
 .facet {
-  min-width: 130px;
-  max-height: 108px;
+  margin-top: 4px;
+  min-width: 150px;
+  max-height: 176px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -115,16 +157,20 @@ button[aria-pressed="true"] { background: var(--wash); border-color: var(--serie
 }
 .facet label {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
-  padding: 2px 0;
+  padding: 4px 2px;
   cursor: pointer;
   white-space: nowrap;
   font-size: 13px;
+  min-height: 28px;
 }
 .range { display: flex; align-items: center; gap: 4px; }
 .range input { width: 66px; }
 .range span { color: var(--text-muted); }
+
+/* The filter toggle only exists on narrow screens. */
+.filter-toggle { display: none; }
 
 main { padding: 16px 24px 48px; display: grid; gap: 16px; }
 .row { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
@@ -209,3 +255,68 @@ tbody tr.frontier td:first-child { box-shadow: inset 3px 0 0 var(--series-1); }
 .empty { color: var(--text-muted); font-size: 13px; padding: 28px 0; text-align: center; }
 footer { padding: 0 24px 32px; color: var(--text-muted); font-size: 12px; }
 footer a { color: inherit; }
+
+/* ---------------------------------------------------------------- touch */
+
+/* Coarse pointers get targets they can actually hit. */
+@media (pointer: coarse) {
+  button, select, input { min-height: 40px; }
+  .facet label { min-height: 36px; padding: 6px 2px; }
+  .facet label input { width: 18px; height: 18px; }
+  .shots button { min-width: 62px; }
+  th { padding: 10px 10px 10px 0; }
+  td { padding: 9px 10px 9px 0; }
+}
+
+/* ---------------------------------------------------------------- narrow */
+
+@media (max-width: 720px) {
+  header { padding: 14px 14px 8px; }
+  header h1 { font-size: 16px; }
+  main { padding: 12px 14px 40px; gap: 12px; }
+  .card { padding: 12px 12px 14px; border-radius: 8px; }
+
+  /* Data first: the filter panel collapses behind a toggle. */
+  .filter-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 14px 10px;
+    width: calc(100% - 28px);
+    justify-content: center;
+  }
+  .filters {
+    padding: 0 14px 14px;
+    gap: 10px 12px;
+  }
+  .filters[hidden] { display: none; }
+  .field { flex: 1 1 calc(50% - 6px); min-width: 0; }
+  .field.grow { flex: 1 1 100%; }
+  .facet-group, .facet-group > summary { width: 100%; }
+  .facet { min-width: 0; }
+  .range input { width: 100%; min-width: 0; }
+  .range { width: 100%; }
+
+  /* Stat tiles read fine two-up rather than stretched across. */
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tile { min-width: 0; padding: 8px 12px; }
+  .tile .value { font-size: 20px; }
+
+  .axes { gap: 8px; }
+  .axes .field { flex: 1 1 100%; }
+
+  /* Secondary table columns fold away rather than forcing a 12-column
+     horizontal scroll; the wide screen still shows all of them. */
+  th[data-optional], td[data-optional] { display: none; }
+  .table-wrap { max-height: 60vh; }
+  td, th { white-space: normal; }
+  td.num, th.num { white-space: nowrap; }
+
+  .tooltip { max-width: min(78vw, 280px); }
+  footer { padding: 0 14px 28px; }
+}
+
+@media (max-width: 420px) {
+  .tiles { grid-template-columns: 1fr 1fr; }
+  .field { flex: 1 1 100%; }
+}

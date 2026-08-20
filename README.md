@@ -179,6 +179,22 @@ overview envelopes first, then full rate on demand with impulse and Leq
 derived in the browser. A run or shot is deep-linkable
 (`#run=20&shot=296`), and `?theme=light|dark` overrides the OS setting.
 
+On a phone the filter panel collapses behind a toggle so the data is above the
+fold, each dimension is its own disclosure with a count badge, the table folds
+to five columns instead of scrolling sideways, and a tap does the job hover
+does on a desktop: it selects the run *and* leaves the readout up until the
+next tap.
+
+`scripts/ui_smoke.mjs` drives the real thing over CDP — screenshots prove it
+renders, this proves it works:
+
+```
+python3 scripts/serve.py &
+chromium --headless --remote-debugging-port=9222 --no-sandbox about:blank &
+node scripts/ui_smoke.mjs                                   # 390x844, touch
+node scripts/ui_smoke.mjs http://127.0.0.1:8765/index.html 1400 900
+```
+
 `web/tbacss.js` is the dependency-free reader underneath it: `loadBundle`,
 `selection`, `paretoFront`, `fetchRunEnvelopes`, `fetchSamples`, `decodeFrame`,
 and the derived `impulse` / `leq` / `metrics`. To confirm the browser maths
