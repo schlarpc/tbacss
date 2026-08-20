@@ -1,0 +1,20 @@
+# Bulk inputs and build output. All of it is reproducible:
+#   scripts/fetch_sources.sh --archives
+#   python -m tbacss build / analyze / publish
+*.tar.gz
+tbacss.db
+tbacss.db-wal
+tbacss.db-shm
+web/data/
+web/fixture/
+
+# The report pages are TBAC's copyrighted document rather than the data, and
+# they are ~700 KB of markup nothing in the build reads. scripts/fetch_sources.sh
+# puts them back. The all.csv tables next to them are data and are tracked.
+summit*/index.html
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.egg-info/
