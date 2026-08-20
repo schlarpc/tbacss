@@ -37,6 +37,21 @@ Only `numpy` is needed to build and read. `scipy` is needed for `verify`,
 pip install numpy scipy pandas
 ```
 
+## Get the sources
+
+The published summary tables are tracked here. Everything else — the report
+pages, TBAC's reference Octave, and the ~21 GB of release archives — is
+fetched:
+
+```
+scripts/fetch_sources.sh              # tables, reports, reference code
+scripts/fetch_sources.sh --archives   # also the release sets
+```
+
+[PROVENANCE.md](PROVENANCE.md) records the URL, size and SHA-256 of every
+archive; [ATTRIBUTION.md](ATTRIBUTION.md) covers the terms the data is used
+under.
+
 ## Build
 
 ```
@@ -186,8 +201,8 @@ footer tags are kept verbatim in `waveform.header_json` / `waveform.tags_json`.
 ## Verification
 
 `python -m tbacss verify` recomputes every cell of `all.csv` from the stored
-waveforms using `tbacss/analysis.py`, a port of the Octave that TBAC links
-from the report's CODE section (kept in `reference/octave/`). Agreement is
+waveforms using `tbacss/analysis.py`, an independent port of the Octave TBAC
+links from each report's CODE section (fetched into `reference/`). Agreement is
 within the table's 2-decimal rounding, which is the end-to-end check that the
 archive was parsed correctly.
 
