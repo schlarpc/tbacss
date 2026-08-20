@@ -183,6 +183,8 @@ def test_an_undefined_tail_is_a_short_capture_not_damage():
     assert waveform.dropped_tail == 200
     assert waveform.short_capture
     assert not waveform.truncated  # captured + dropped accounts for the buffer
+    # The dropped rows still carried an index, so the column is consistent.
+    assert not waveform.index_inconsistent
     assert waveform.defects == ()
     assert not np.isnan(waveform.samples).any()
 

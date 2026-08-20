@@ -307,7 +307,9 @@ def parse_pulse(raw: bytes, *, with_samples: bool = True) -> PulseWaveform:
         last_index = int(tokens[-3])
     except ValueError:
         last_index = None
-    inconsistent = last_index != samples.size
+    # Compare against the row count before the undefined tail was trimmed:
+    # those rows still carry an index, so a short capture is consistent.
+    inconsistent = last_index != samples.size + dropped_tail
 
     return PulseWaveform(
         header, tags, samples, len(header_lines), defects, inconsistent, dropped_tail
