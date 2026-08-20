@@ -1,0 +1,250 @@
+# tbacss
+
+Parses [TBAC Silencer Summit](https://thunderbeastarms.com/sound/consolidated/)
+release sets into a single SQLite database: the published summary table, the
+per-suppressor physical specs, and every PULSE waveform in the archive.
+
+## What the release sets look like
+
+TBAC publishes two things per year:
+
+* `all.csv` — the summary table from the report. One row per test run, with
+  shot-averaged peak / impulse / Leq figures for each microphone.
+* `<year>_SUMMIT_RELEASE_SET.tar.gz` — the raw B&K PULSE exports. Every
+  capture is 131072 samples at 262144 Hz (0.5 s, 24-bit), exported as ASCII.
+
+The layout is not the same every year, and the parser handles both shapes:
+
+| | 2023 | 2024 – 2026 |
+| --- | --- | --- |
+| archive root | `2023_SUMMIT_RELEASE_SET/` | none |
+| event | `Day1` … `Day3` | `YYYYMMDD` |
+| shot | `Shot N/` subdirectory | filename suffix `- Input.N` |
+| microphones | `ML`, `SE`, `225` | `ML`, `MR`, `SE` |
+| physical specs | `all.csv` only | `Specs.txt` per run |
+| `.22` analysis window | 0.125 s (no special case) | 0.100 s |
+
+`ML` and `MR` are the MIL-STD-1474 positions left and right of the muzzle,
+`SE` is the shooter's ear, and `225` is the 225-degree above-shoulder-arc
+position 2023 used in place of `MR`.
+
+## Install
+
+Only `numpy` is needed to build and read. `scipy` is needed for `verify`,
+`pandas` for `export`.
+
+```
+pip install numpy scipy pandas
+```
+
+## Build
+
+```
+for year in 2023 2024 2025; do
+    python -m tbacss build tbacss.db \
+        --year $year \
+        --archive ${year}_SUMMIT_RELEASE_SET.tar.gz \
+        --summary-csv summit$year/all.csv
+done
+
+# 2026's release set is not posted yet; import the published table alone
+python -m tbacss build tbacss.db --year 2026 --summary-csv summit2026/all.csv
+
+python -m tbacss analyze tbacss.db      # per-shot metrics from the waveforms
+```
+
+The tarball is streamed, so the expanded text never hits disk. `--archive`
+also accepts an already-extracted directory, and omitting it imports only
+`all.csv` — useful for a year whose waveforms have not been released.
+
+## Use
+
+```python
+from tbacss import SummitDB
+
+with SummitDB("tbacss.db") as db:
+    quietest = db.query("""
+        SELECT manufacturer, suppressor, se_peak_db, weight_oz
+        FROM v_run
+        WHERE cartridge = '5.56-16AR' AND caliber = '.223'
+        ORDER BY se_peak_db LIMIT 10
+    """)
+
+    run = db.runs(manufacturer="TBAC", suppressor="Ultra 7")[0]
+    for shot in db.waveforms(run["test_run_id"], mic="SE"):
+        print(shot.shot, shot.samples.max(), "Pa peak")
+```
+
+`Waveform.samples` is a float32 numpy array of pressure in Pa;
+`Waveform.times()` reconstructs the sample times.
+
+Other commands:
+
+```
+python -m tbacss info tbacss.db
+python -m tbacss export tbacss.db measurements.parquet --view v_measurement
+python -m tbacss wave tbacss.db 1234 shot.npz
+python -m tbacss verify tbacss.db
+```
+
+## Static web bundle
+
+`python -m tbacss publish tbacss.db web/data` writes a bundle a static site can
+serve with no backend and no query engine:
+
+| file | loaded | contents |
+| --- | --- | --- |
+| `catalog.json` | up front | one row per run, dictionary-encoded columns |
+| `shots.json` | up front | per-shot metrics |
+| `waveforms.json` | up front | byte offsets into the two `.bin` files |
+| `envelopes.bin` | on demand | 2048-bucket min/max per record, raw int16 |
+| `samples.bin` | on demand | full-rate analysis window, `fixed2-rice-v1` frames |
+
+The split is deliberate. Everything filterable is a few thousand rows, so it
+ships whole and lands in typed arrays; filtering and Pareto search are plain
+loops. Everything large is a waveform, which no SQL engine helps with — those
+are fetched one at a time by byte range.
+
+Impulse and Leq curves are *not* published. They are a cumulative trapezoid
+and a six-coefficient IIR, cheap to derive in the browser, and deriving them
+client-side lets a reader re-window or re-weight interactively instead of
+being stuck with whatever was baked in at publish time.
+
+### The waveform codec
+
+These records are audio — 262 kHz sampling of a signal whose energy is far
+below Nyquist — so `tbacss/wavecodec.py` uses the cheap tier of FLAC: quantise
+to integers, take the second difference, Rice-code the residual with a
+parameter chosen per 4096-sample block. Measured over real records, bytes per
+sample:
+
+| encoding | B/sample |
+| --- | ---: |
+| float32 raw | 4.000 |
+| float32 + zlib | 2.416 |
+| float16 raw / int16 raw | 2.000 |
+| int16 + zlib | 1.356 |
+| int16 + zstd-19 | 1.270 |
+| int16 delta + zstd-19 | 1.130 |
+| **int16 + this codec** | **0.889** |
+| int24 + this codec | 1.887 |
+
+The win comes from predicting across samples. No per-sample number format can
+capture that: float16, bfloat16 and posit16 all sit at 2.0 B/sample, and a
+posit's tapered precision peaks near ±1.0 while every metric here is
+referenced to the peak. Order 2 beat orders 0, 1, 3 and 4 on every record, and
+also beat computed LPC at orders 8, 16 and 32 — the signal is oversampled
+enough that a two-tap predictor is already near optimal.
+
+At `--sample-bits 24` the codec reproduces the published metrics *exactly* and
+still costs less than raw int16. At the int16 default the worst error is
+0.0013 dB, against tables rounded to 0.01 dB.
+
+Envelopes stay raw int16 on purpose: a client slices them straight out of one
+Range response with no decode, and the codec only buys 1.34x there — not worth
+a decode per record every time a run is opened.
+
+`scripts/bench_encodings.py` reproduces the table above.
+
+`web/tbacss.js` is a dependency-free reference reader: `loadBundle`,
+`selection`, `paretoFront`, `fetchEnvelope`, `fetchSamples`, and the derived
+`impulse` / `leq` / `metrics`. To confirm the browser maths matches Python:
+
+```
+node web/test.mjs                                       # filtering and Pareto
+python3 scripts/make_js_fixture.py tbacss.db web/fixture
+node web/check.mjs web/fixture                          # DSP against Python
+```
+
+`check.mjs` closes the loop: Python encodes a frame, JS decodes it, JS
+recomputes peak / dBA / impulse / Leq, and the results are compared against
+what `tbacss.analysis` gets from the same samples. They agree to 0.00001 dB,
+which is what makes it safe to derive figures in the browser rather than
+shipping precomputed curves.
+
+## Schema
+
+| table | grain |
+| --- | --- |
+| `dataset` | one summit year, with the archive's SHA-256 |
+| `test_run` | one suppressor on one host/cartridge on one day |
+| `summary_metric` | run × mic, straight from `all.csv` |
+| `waveform` | run × mic × shot, with the samples as a compressed blob |
+| `shot_metric` | run × mic × shot, recomputed by `analyze` |
+
+Three views flatten the common cases: `v_measurement` (one row per run per
+mic), `v_run` (one row per run, all mics pivoted, plus cylinder volume), and
+`v_shot` (per-shot metrics with enough context to group them).
+
+In SQLite, samples are stored as zlib-compressed little-endian float32. The
+source files print six significant figures, which float32 round-trips exactly,
+so nothing is lost relative to the release set. (The `fixed2-rice-v1` codec is
+for the web bundle, where halving the bytes on the wire matters; the database
+keeps the plain float32 so any tool can read it.) The full PULSE header and
+footer tags are kept verbatim in `waveform.header_json` / `waveform.tags_json`.
+
+## Verification
+
+`python -m tbacss verify` recomputes every cell of `all.csv` from the stored
+waveforms using `tbacss/analysis.py`, a port of the Octave that TBAC links
+from the report's CODE section (kept in `reference/octave/`). Agreement is
+within the table's 2-decimal rounding, which is the end-to-end check that the
+archive was parsed correctly.
+
+`analysis.py` is usable on its own if you want to re-window or re-weight the
+data: `a_weighting()`, `leq_fast()`, `shot_metrics()`, `average_metrics()`.
+
+Unit tests cover the file formats against synthetic fixtures:
+
+```
+python3 -m pytest
+```
+
+## Notes on the data
+
+* 2023 names each shot directory outright. From 2024 on, PULSE names the first
+  export `- Input.txt` and later ones `- Input.1` onwards, so the filename
+  suffix is *not* the shot order; shots are numbered by the capture timestamp
+  in the header instead. The 2025 set adds an `Input.5` symlink to `Input.txt`
+  in most runs, which agrees.
+* 2023 saved more shots than it published in a few runs. Every capture is
+  stored; `test_run.shots` is how many the report averaged, and `verify` uses
+  only those.
+* A handful of run directories disagree with the report on the suppressor
+  name. Those are matched on manufacturer, host and physical dimensions, and
+  the directory spelling is preserved in `test_run.archive_suppressor`.
+* Runs that were photographed but not fired carry a note prefix on the spec
+  filename (`DNR Specs.txt`, `Did not Run Specs.txt`); that lands in
+  `test_run.note`, and `test_run.in_summary` marks whether the run made it
+  into the published table.
+* `Specs.txt` lists length *before* weight, the opposite of the `all.csv`
+  column order.
+* The unsuppressed reference is manufacturer `Bare Muzzle` in 2023 and `Bare`
+  from 2024 on; `test_run.is_baseline` flags either. 2023 has two, 2025 three,
+  and the 2026 table has none.
+* PULSE fills the unused tail of its capture buffer with `Undefined`. 2024 ran
+  the .22LR bolt gun with a 0.1 s capture into the same 0.5 s buffer, so 465
+  records come back 104448 rows short by design. Those are stored at their real
+  length and flagged as short captures, not as damage.
+* Two genuine defects exist across all four archives, both in 2023:
+  `Day1/AB/Raptor 10` has a directory literally named `XX Shot 4 did not
+  record` whose files are entirely `Undefined`, and one Otter Creek `Hydrogen
+  L` file is cut off at 127805 of 131072 rows with three byte-corrupted
+  numbers in the tail. The truncation is past the analysis window, so that
+  record is kept and flagged rather than dropped.
+* Unparseable samples become NaN, never a guessed value; `waveform.defect_count`
+  and `defects_json` record which. `analysis.fill_defects` interpolates runs of
+  at most 8 samples (30 µs) and refuses anything longer.
+* Names are entered by hand and are not normalised, within a year or across
+  them: `Theorem S` / `Theorem-S`, `AEM5K` / `AEM5k`, `RXD910TI` / `RXD910Ti`,
+  `Wraith Metalworks` (2025) / `Wraith Metal Works` (2026). Do not join on
+  name without cleaning first.
+* `waveform.overload` carries the DAQ's clipping flag. In 2025 it is set on
+  exactly 15 records, all of them the unsuppressed .300 Win Mag baseline,
+  which peaks near 10 kPa.
+
+## Licence of the data
+
+TBAC releases the numbers, the CSV and the PULSE waveform files for anyone to
+use provided the data is footnoted as coming from that year's Silencer Summit.
+The report prose and its graphs are copyright TBAC and are not redistributable.
