@@ -264,6 +264,7 @@ def _cmd_publish(args) -> int:
         args.output,
         buckets=args.buckets,
         sample_bits=args.sample_bits,
+        catalog_only=args.catalog_only,
         progress=None if args.quiet else progress,
     )
     sys.stderr.write("\r" + " " * 60 + "\r")
@@ -345,6 +346,8 @@ def main(argv=None) -> int:
     p.add_argument("--buckets", type=int, default=2048, help="envelope resolution")
     p.add_argument("--sample-bits", type=int, default=16, choices=[16, 24],
                    help="quantiser depth for the full-rate tier")
+    p.add_argument("--catalog-only", action="store_true",
+                   help="rewrite the JSON only, leaving the .bin files as they are")
     p.add_argument("--quiet", action="store_true")
     p.set_defaults(func=_cmd_publish)
 

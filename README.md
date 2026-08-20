@@ -161,9 +161,28 @@ a decode per record every time a run is opened.
 
 `scripts/bench_encodings.py` reproduces the table above.
 
-`web/tbacss.js` is a dependency-free reference reader: `loadBundle`,
-`selection`, `paretoFront`, `fetchEnvelope`, `fetchSamples`, and the derived
-`impulse` / `leq` / `metrics`. To confirm the browser maths matches Python:
+### Running the explorer
+
+```
+python -m tbacss publish tbacss.db web/data
+python3 scripts/serve.py                     # http://127.0.0.1:8765
+```
+
+Use `scripts/serve.py`, not `python -m http.server`: the stock one ignores
+`Range` and answers 200 with the whole file, so every waveform click would pull
+all 432 MB of `samples.bin`. Any real static host (S3, Cloudflare, nginx,
+Caddy) handles ranges correctly.
+
+The page filters on facets and numeric ranges, plots any measure against any
+other with the Pareto frontier highlighted, and draws a run's waveforms —
+overview envelopes first, then full rate on demand with impulse and Leq
+derived in the browser. A run or shot is deep-linkable
+(`#run=20&shot=296`), and `?theme=light|dark` overrides the OS setting.
+
+`web/tbacss.js` is the dependency-free reader underneath it: `loadBundle`,
+`selection`, `paretoFront`, `fetchRunEnvelopes`, `fetchSamples`, `decodeFrame`,
+and the derived `impulse` / `leq` / `metrics`. To confirm the browser maths
+matches Python:
 
 ```
 node web/test.mjs                                       # filtering and Pareto

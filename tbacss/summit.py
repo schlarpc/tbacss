@@ -26,6 +26,7 @@ __all__ = [
     "parse_waveform_filename",
     "read_summary_csv",
     "is_baseline_manufacturer",
+    "is_reference_run",
     "is_void_capture",
     "IGNORED_FILENAMES",
     "NOTE_FILENAME",
@@ -89,9 +90,25 @@ _SPEC_FILE = re.compile(r"^(?:(?P<note>.+?)\s+)?Specs?\.txt$")
 # "Bare Muzzle"; 2024 and 2025 shortened it to "Bare".
 BASELINE_MANUFACTURERS = frozenset({"Bare", "Bare Muzzle"})
 
+# Reference signals that are not a gunshot at all.  2023 recorded a handclap
+# ("TBAC / Kurtis Clap", cal and cart both "hand") and entered the clapper's
+# weight and height in the physical-spec columns -- 2800 oz and 72 in, against
+# a 30 oz heaviest real suppressor.  Left unclassified it dominates any axis it
+# appears on, so it is grouped with the baselines: measured, kept, and not a
+# suppressor.
+REFERENCE_CARTRIDGES = frozenset({"hand"})
+
 
 def is_baseline_manufacturer(manufacturer: str) -> bool:
     return manufacturer in BASELINE_MANUFACTURERS
+
+
+def is_reference_run(manufacturer: str, cartridge: str) -> bool:
+    """Whether a run measures something other than a suppressed shot."""
+    return (
+        manufacturer in BASELINE_MANUFACTURERS
+        or cartridge.strip().lower() in REFERENCE_CARTRIDGES
+    )
 
 
 RunKey = tuple[str, str, str, str, str]
@@ -112,7 +129,7 @@ class RunDir:
 
     @property
     def is_baseline(self) -> bool:
-        return is_baseline_manufacturer(self.manufacturer)
+        return is_reference_run(self.manufacturer, self.cartridge)
 
 
 @dataclass(frozen=True)

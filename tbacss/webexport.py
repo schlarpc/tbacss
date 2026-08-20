@@ -201,9 +201,16 @@ def publish(
     *,
     buckets: int = ENVELOPE_BUCKETS,
     sample_bits: int = 16,
+    catalog_only: bool = False,
     progress=None,
 ) -> PublishReport:
-    """Write the static bundle for ``db_path`` into ``out_dir``."""
+    """Write the static bundle for ``db_path`` into ``out_dir``.
+
+    ``catalog_only`` rewrites just the three JSON files and leaves the two
+    binaries alone.  Repacking 13620 frames to change one column in the
+    catalog is several minutes of work for a few hundred kilobytes of output,
+    and the waveform bytes only change when the database's waveforms do.
+    """
     from .api import SummitDB
 
     out = Path(out_dir)
@@ -255,8 +262,13 @@ def publish(
         report.waveforms = len(index)
 
         env_path, raw_path = out / "envelopes.bin", out / "samples.bin"
+        if catalog_only and not (env_path.exists() and raw_path.exists()):
+            raise SystemExit(
+                f"catalog_only needs an existing bundle in {out}; run a full publish first"
+            )
         entries = []
-        with open(env_path, "wb") as env_file, open(raw_path, "wb") as raw_file:
+        mode = "rb" if catalog_only else "wb"
+        with open(env_path, mode) as env_file, open(raw_path, mode) as raw_file:
             env_offset = raw_offset = 0
             for position, row in enumerate(index):
                 blob = db.query(
@@ -275,8 +287,9 @@ def publish(
                 # Full-rate samples get the frame codec, which halves them.
                 # That tier is only fetched on zoom, so ~2 ms to decode is free.
                 raw_bytes = wavecodec.encode(window, bits=sample_bits).payload
-                env_file.write(env_bytes)
-                raw_file.write(raw_bytes)
+                if not catalog_only:
+                    env_file.write(env_bytes)
+                    raw_file.write(raw_bytes)
 
                 entries.append(
                     {
