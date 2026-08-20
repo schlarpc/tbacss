@@ -185,14 +185,39 @@ export function paretoFront(table, objectives, mask = null) {
 
 /* ---------------------------------------------------------------- waveforms */
 
-async function fetchRange(url, offset, length) {
+let warnedAboutRanges = false;
+
+/**
+ * Fetch `length` bytes at `offset`.
+ *
+ * A server that ignores `Range` answers 200 with the *whole* file — Python's
+ * stock http.server does exactly this. That would hand back hundreds of
+ * megabytes and, worse, silently wrong bytes at the wrong offset, so detect it
+ * and slice client-side rather than trusting the response. Use
+ * `scripts/serve.py` to get real 206s.
+ */
+async function fetchSlice(url, offset, length) {
   const response = await fetch(url, {
     headers: { Range: `bytes=${offset}-${offset + length - 1}` },
   });
   if (!response.ok && response.status !== 206) {
     throw new Error(`range request failed: ${response.status}`);
   }
-  return new Int16Array(await response.arrayBuffer());
+  const buffer = await response.arrayBuffer();
+  if (response.status === 206) return buffer;
+
+  if (!warnedAboutRanges) {
+    warnedAboutRanges = true;
+    console.warn(
+      `${url} answered ${response.status} to a Range request: this server ` +
+        'sends whole files. Slicing locally; use scripts/serve.py to avoid it.',
+    );
+  }
+  return buffer.slice(offset, offset + length);
+}
+
+async function fetchRange(url, offset, length) {
+  return new Int16Array(await fetchSlice(url, offset, length));
 }
 
 /**
@@ -223,11 +248,7 @@ export async function fetchRunEnvelopes(bundle, runId) {
   const envLen = bundle.waveforms.env_len;
   const base = first * envLen;
   const length = count * envLen;
-  const buffer = await (
-    await fetch(`${bundle.baseUrl}/envelopes.bin`, {
-      headers: { Range: `bytes=${base}-${base + length - 1}` },
-    })
-  ).arrayBuffer();
+  const buffer = await fetchSlice(`${bundle.baseUrl}/envelopes.bin`, base, length);
 
   return bundle.byRun.get(runId).map((entry) => {
     const [offset, size, scale] = entry.env;
@@ -247,13 +268,8 @@ export async function fetchRunEnvelopes(bundle, runId) {
 export async function fetchSamples(bundle, waveformId) {
   const entry = bundle.byId.get(waveformId);
   const [offset, length] = entry.raw;
-  const response = await fetch(`${bundle.baseUrl}/samples.bin`, {
-    headers: { Range: `bytes=${offset}-${offset + length - 1}` },
-  });
-  if (!response.ok && response.status !== 206) {
-    throw new Error(`range request failed: ${response.status}`);
-  }
-  const { values } = decodeFrame(await response.arrayBuffer());
+  const frame = await fetchSlice(`${bundle.baseUrl}/samples.bin`, offset, length);
+  const { values } = decodeFrame(frame);
   return { values, dt: entry.dt, t0: bundle.waveforms.window_start_s, entry };
 }
 
