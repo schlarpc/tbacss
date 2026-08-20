@@ -41,9 +41,11 @@ RESERVED, and may not be reproduced without written permission from TBAC."
 That is why `summit*/index.html` is fetched rather than tracked, and why
 nothing here republishes TBAC's own graphs.
 
-The Octave in `reference/` is TBAC's, reproduced under the same copyright
-notice it carries; `tbacss/analysis.py` is an independent port of the
-documented method, and `python -m tbacss verify` is what shows the port agrees.
+The Octave TBAC links from each report carries the same reservation, so it is
+fetched into `reference/` by `scripts/fetch_sources.sh` rather than vendored
+here. Nothing in the build reads it: `tbacss/analysis.py` is an independent
+port of the method the reports document, and `python -m tbacss verify` is what
+demonstrates the port agrees with TBAC's published numbers.
 
 ## This code
 

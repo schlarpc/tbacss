@@ -8,10 +8,14 @@ tbacss.db-shm
 web/data/
 web/fixture/
 
-# The report pages are TBAC's copyrighted document rather than the data, and
-# they are ~700 KB of markup nothing in the build reads. scripts/fetch_sources.sh
-# puts them back. The all.csv tables next to them are data and are tracked.
+# TBAC's own material, fetched rather than vendored: the report pages are
+# their copyrighted document rather than the data they grant use of, and
+# reference/ is their Octave, which carries an ALL RIGHTS RESERVED header.
+# Neither is needed to build -- tbacss/analysis.py is an independent port --
+# and scripts/fetch_sources.sh puts both back. The all.csv tables next to the
+# reports are data and are tracked.
 summit*/index.html
+reference/
 
 __pycache__/
 *.py[cod]
