@@ -38,6 +38,7 @@ from pathlib import Path
 import numpy as np
 
 from . import blobs, wavecodec
+from .hosts import HOSTS
 from .analysis import TIME_START_S, TIME_STOP_S, TIME_STOP_SHORT_S, is_short_window
 
 __all__ = ["ENVELOPE_BUCKETS", "PublishReport", "publish"]
@@ -230,8 +231,20 @@ def publish(
         for column in _NUMERIC_COLUMNS:
             catalog["columns"][column] = _finite([r[column] for r in runs])
 
-        datasets = db.query("SELECT year, name, report_url, archive_sha256 FROM dataset")
+        datasets = db.query(
+            "SELECT year, name, report_url, archive_sha256 FROM dataset ORDER BY year"
+        )
         catalog["datasets"] = [dict(d) for d in datasets]
+
+        # The host codes are prose in each year's report, not in all.csv, so
+        # ship the transcription with the data rather than making every reader
+        # decode ".50BW-SUB-10.5AR" for themselves.
+        used = set(catalog["dictionaries"]["cartridge"])
+        catalog["hosts"] = {
+            code: {"label": label, "description": description}
+            for code, (label, description) in HOSTS.items()
+            if code in used
+        }
 
         # -- per-shot metrics ------------------------------------------------
         shots = db.query(
@@ -262,13 +275,23 @@ def publish(
         report.waveforms = len(index)
 
         env_path, raw_path = out / "envelopes.bin", out / "samples.bin"
-        if catalog_only and not (env_path.exists() and raw_path.exists()):
-            raise SystemExit(
-                f"catalog_only needs an existing bundle in {out}; run a full publish first"
-            )
+        index_path = out / "waveforms.json"
+        if catalog_only:
+            # Reuse the published index rather than decoding 13k blobs to
+            # rebuild an index that is already on disk and unchanged.
+            if not (env_path.exists() and raw_path.exists() and index_path.exists()):
+                raise SystemExit(
+                    f"catalog_only needs an existing bundle in {out}; "
+                    "run a full publish first"
+                )
+            waveform_index = json.loads(index_path.read_text())
+            report.waveforms = waveform_index["n"]
+            _write_json(out, catalog, shot_table, waveform_index)
+            return _measure(out, report, waveform_index["n"] * buckets * 4,
+                            sum(waveform_index["columns"]["raw_len"]))
+
         entries = []
-        mode = "rb" if catalog_only else "wb"
-        with open(env_path, mode) as env_file, open(raw_path, mode) as raw_file:
+        with open(env_path, "wb") as env_file, open(raw_path, "wb") as raw_file:
             env_offset = raw_offset = 0
             for position, row in enumerate(index):
                 blob = db.query(
@@ -287,9 +310,8 @@ def publish(
                 # Full-rate samples get the frame codec, which halves them.
                 # That tier is only fetched on zoom, so ~2 ms to decode is free.
                 raw_bytes = wavecodec.encode(window, bits=sample_bits).payload
-                if not catalog_only:
-                    env_file.write(env_bytes)
-                    raw_file.write(raw_bytes)
+                env_file.write(env_bytes)
+                raw_file.write(raw_bytes)
 
                 entries.append(
                     {
@@ -353,6 +375,16 @@ def publish(
             "run_count": run_count,
         }
 
+    _write_json(out, catalog, shot_table, waveform_index)
+    return _measure(
+        out,
+        report,
+        len(entries) * buckets * 4,
+        sum(entry["raw_len"] for entry in entries),
+    )
+
+
+def _write_json(out: Path, catalog, shot_table, waveform_index) -> None:
     for name, payload in (
         ("catalog.json", catalog),
         ("shots.json", shot_table),
@@ -360,22 +392,29 @@ def publish(
     ):
         (out / name).write_text(json.dumps(payload, separators=(",", ":")))
 
-    for name in ("catalog.json", "shots.json", "waveforms.json", "envelopes.bin", "samples.bin"):
+
+def _measure(out: Path, report, expected_env: int, expected_raw: int):
+    """Record the file sizes, and check the index's arithmetic lands on them.
+
+    The index publishes lengths, not offsets, so a client rebuilds both by
+    prefix sum. A silent drift there would produce plausible-looking garbage.
+    """
+    for name in (
+        "catalog.json",
+        "shots.json",
+        "waveforms.json",
+        "envelopes.bin",
+        "samples.bin",
+    ):
         report.files[name] = (out / name).stat().st_size
 
-    # The index publishes lengths, not offsets, so a client rebuilds both by
-    # prefix sum. Check here that the arithmetic lands exactly on the files,
-    # because a silent drift would produce plausible-looking garbage.
-    expected_env = len(entries) * buckets * 4
-    expected_raw = sum(entry["raw_len"] for entry in entries)
-    if report.files["envelopes.bin"] != expected_env:
-        raise RuntimeError(
-            f"envelopes.bin is {report.files['envelopes.bin']} bytes, "
-            f"but the index implies {expected_env}"
-        )
-    if report.files["samples.bin"] != expected_raw:
-        raise RuntimeError(
-            f"samples.bin is {report.files['samples.bin']} bytes, "
-            f"but the index implies {expected_raw}"
-        )
+    for name, expected in (
+        ("envelopes.bin", expected_env),
+        ("samples.bin", expected_raw),
+    ):
+        if report.files[name] != expected:
+            raise RuntimeError(
+                f"{name} is {report.files[name]} bytes, "
+                f"but the index implies {expected}"
+            )
     return report

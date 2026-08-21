@@ -29,6 +29,9 @@ async function loadTable(url) {
     columns,
     dictionaries: raw.dictionaries ?? {},
     datasets: raw.datasets ?? null,
+    // Host code -> {label, description}, transcribed from each year's report;
+    // the codes are not explained anywhere in all.csv.
+    hosts: raw.hosts ?? {},
     /** Row as a plain object, for display. */
     row(i) {
       const out = {};

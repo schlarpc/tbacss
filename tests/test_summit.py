@@ -216,3 +216,31 @@ def test_read_summary_csv_rejects_an_unknown_metric(tmp_path):
     path.write_text(SUMMARY_CSV.replace("Pk Leq,shots", "Pk Bananas,shots"))
     with pytest.raises(ValueError, match="unknown metric"):
         read_summary_csv(path)
+
+
+ZERO_SPEC_CSV = """\
+_EVENT_,_MFGR_,_SUPPRESSOR_,_CAL_,_CART_,SE,SE,SE,SE,SE,SE,
+_EVENT_,_MFGR_,_SUPPRESSOR_,_CAL_,_CART_,PkPr,dB,dB(A),Im-Pa,Im-dB,Pk Leq,shots,weight,len,maxdia
+20240820,Innovative Arms,"IASW",".22",".22LR-Integral-SA",1,2,3,4,5,6,5,0.0,0.0,0.0
+20240820,Real Co,"Real Can",".22",".22LR-BA",1,2,3,4,5,6,5,6.3,4.58,1.11
+"""
+
+
+def test_a_zero_physical_spec_is_missing_not_zero(tmp_path):
+    """0.0 oz means "not applicable", and taken literally it wins every frontier.
+
+    Six 2024 rows carry zeros: the five bare-muzzle references, which have no
+    suppressor, and Innovative Arms' IASW, an integrally-suppressed rifle whose
+    can is the barrel.
+    """
+    path = tmp_path / "all.csv"
+    path.write_text(ZERO_SPEC_CSV)
+    integral, real = read_summary_csv(path)
+
+    assert integral.weight_oz is None
+    assert integral.length_in is None
+    assert integral.max_diameter_in is None
+    # A real measurement is untouched.
+    assert real.weight_oz == 6.3
+    assert real.length_in == 4.58
+    assert real.max_diameter_in == 1.11

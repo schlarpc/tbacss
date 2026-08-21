@@ -355,6 +355,19 @@ def read_summary_csv(path) -> list[SummaryRow]:
         except ValueError:
             return None
 
+    def dimension(value: str) -> float | None:
+        """A physical spec, where zero means "not applicable", not "zero".
+
+        The bare-muzzle references have no suppressor to measure, and
+        Innovative Arms' IASW is an integrally-suppressed rifle, so its can is
+        the barrel. All six are entered as 0.0 rather than left blank. Taken
+        literally, a 0 oz 0 in suppressor is lighter and shorter than anything
+        real and wins every frontier it appears on, so a zero is stored as
+        missing.
+        """
+        measured = num(value)
+        return None if measured == 0 else measured
+
     out: list[SummaryRow] = []
     for line_no, row in enumerate(rows[2:], start=3):
         if not any(cell.strip() for cell in row):
@@ -375,9 +388,9 @@ def read_summary_csv(path) -> list[SummaryRow]:
                 caliber=row[3].strip(),
                 cartridge=row[4].strip(),
                 shots=int(shots) if shots is not None else None,
-                weight_oz=num(row[trailing["weight"]]),
-                length_in=num(row[trailing["len"]]),
-                max_diameter_in=num(row[trailing["maxdia"]]),
+                weight_oz=dimension(row[trailing["weight"]]),
+                length_in=dimension(row[trailing["len"]]),
+                max_diameter_in=dimension(row[trailing["maxdia"]]),
                 metrics=metrics,
             )
         )

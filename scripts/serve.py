@@ -28,14 +28,18 @@ class RangeHandler(SimpleHTTPRequestHandler):
     """SimpleHTTPRequestHandler plus single-range `bytes=` support."""
 
     protocol_version = "HTTP/1.1"
+    cache_data = False
 
     def end_headers(self) -> None:
         self.send_header("Accept-Ranges", "bytes")
-        # The bundle is immutable once published; the page is not.
-        if self.path.startswith("/data/"):
+        # No caching by default. This is a development server, and a cached
+        # catalog.json quietly serves yesterday's data after a republish --
+        # which looks exactly like the export being broken. Pass --cache to
+        # exercise what a CDN would do.
+        if self.cache_data and self.path.startswith("/data/"):
             self.send_header("Cache-Control", "public, max-age=86400")
         else:
-            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
     def send_head(self):
@@ -113,12 +117,15 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--directory", default="web")
+    parser.add_argument("--cache", action="store_true",
+                        help="send long cache headers for /data, as a CDN would")
     args = parser.parse_args()
 
     root = Path(args.directory).resolve()
     if not (root / "data" / "catalog.json").exists():
         print(f"warning: no bundle at {root / 'data'} — run `tbacss publish` first")
 
+    RangeHandler.cache_data = args.cache
     handler = partial(RangeHandler, directory=str(root))
     server = ThreadingHTTPServer((args.bind, args.port), handler)
     print(f"serving {root} at http://{args.bind}:{args.port}  (ranges enabled)")

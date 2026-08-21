@@ -179,6 +179,14 @@ overview envelopes first, then full rate on demand with impulse and Leq
 derived in the browser. A run or shot is deep-linkable
 (`#run=20&shot=296`), and `?theme=light|dark` overrides the OS setting.
 
+Setting a Z axis punches the plot into 3D — drag to rotate — and the frontier
+becomes 3-objective. Direction is a property of each measure rather than a
+control: everything on the axes is a sound level or a physical dimension, so
+less is always better. A column where more is better is added by writing
+`'max'` in `MEASURES`. `year` is `null` there, meaning it is a dimension and
+not an objective, so putting it on an axis switches the frontier off instead of
+pretending 2026 dominates 2023.
+
 On a phone the filter panel collapses behind a toggle so the data is above the
 fold, each dimension is its own disclosure with a count badge, the table folds
 to five columns instead of scrolling sideways, and a tap does the job hover
@@ -269,6 +277,18 @@ python3 -m pytest
   into the published table.
 * `Specs.txt` lists length *before* weight, the opposite of the `all.csv`
   column order.
+* A physical dimension of `0.0` means "not applicable", not "zero", and is
+  stored as NULL. Six 2024 rows carry zeros: the five bare-muzzle references,
+  and Innovative Arms' IASW, an integrally-suppressed rifle whose can is the
+  barrel. Taken literally a 0 oz, 0 in suppressor is lighter and shorter than
+  anything real — before the fix IASW ranked as the lightest *and* shortest
+  suppressor in the dataset and sat unbeatable on every weight or length
+  frontier.
+* Host codes are not in `all.csv` — they are prose in each year's report.
+  `tbacss/hosts.py` is that prose transcribed, covering all 51 codes, and
+  `publish` ships it so a reader never has to decode `.50BW-SUB-10.5AR`. Note
+  that codes were reused loosely: 2023's bare `5.56` is a 10.3" MK18 while
+  2024's `5.56-16AR` is a 16" DD.
 * The unsuppressed reference is manufacturer `Bare Muzzle` in 2023 and `Bare`
   from 2024 on; `test_run.is_baseline` flags either. 2023 has two, 2025 three,
   and the 2026 table has none.

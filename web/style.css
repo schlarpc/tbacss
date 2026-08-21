@@ -93,10 +93,13 @@ button[aria-pressed="true"] { background: var(--wash); border-color: var(--serie
   display: flex;
   flex-wrap: wrap;
   gap: 14px 18px;
-  align-items: flex-end;
+  /* Top-aligned: an open facet disclosure is much taller than a text input,
+     and flex-end made the row stagger. */
+  align-items: flex-start;
   padding: 10px 24px 16px;
   border-bottom: 1px solid var(--border);
 }
+.filters .field { padding-top: 0; }
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field.grow { flex: 1 1 150px; min-width: 0; }
 .field > label,
@@ -147,7 +150,7 @@ button[aria-pressed="true"] { background: var(--wash); border-color: var(--serie
 .facet {
   margin-top: 4px;
   min-width: 150px;
-  max-height: 176px;
+  max-height: 150px;
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--surface-1);
@@ -224,9 +227,38 @@ canvas { display: block; width: 100%; touch-action: none; }
 .tooltip .dim { color: var(--text-secondary); }
 .tooltip[hidden] { display: none; }
 
-.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0 0; font-size: 12px; }
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  align-items: center;
+}
 .legend .item { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
 .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+/* The frontier is an outline, not a fill: a fill means "selected". */
+.swatch.ring {
+  border-radius: 50%;
+  background: none;
+  border: 2px solid var(--series-1);
+}
+.swatch.ring.muted { border-color: var(--dot-strong); }
+
+.muted-note { text-transform: none; letter-spacing: 0; color: var(--text-muted); }
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text-secondary);
+  text-decoration: underline;
+  font-size: 12px;
+  margin-left: auto;
+}
+.link-button:hover { background: none; color: var(--text-primary); }
+.link-button[hidden] { display: none; }
+canvas.rotatable { cursor: grab; }
+canvas.rotatable:active { cursor: grabbing; }
 
 .table-wrap { overflow: auto; max-height: 460px; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }

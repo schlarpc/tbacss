@@ -38,8 +38,8 @@
   </div>
   <div class="field">
     <details class="facet-group" id="det-caliber">
-      <summary>Calibre <span class="badge" id="count-caliber" hidden></span></summary>
-      <div class="facet" id="facet-caliber" role="group" aria-label="Suppressor calibre"></div>
+      <summary>Caliber <span class="badge" id="count-caliber" hidden></span></summary>
+      <div class="facet" id="facet-caliber" role="group" aria-label="Suppressor caliber"></div>
     </details>
   </div>
   <div class="field">
@@ -103,15 +103,20 @@
           <span class="tiny">Y</span>
           <select id="axis-y"></select>
         </label>
+        <label class="field grow">
+          <span class="tiny">Z <span class="muted-note">optional, makes it 3D</span></span>
+          <select id="axis-z"></select>
+        </label>
       </div>
       <div class="plot-wrap">
         <canvas id="scatter" height="420"></canvas>
         <div class="tooltip" id="scatter-tip" hidden></div>
       </div>
       <div class="legend">
-        <span class="item"><span class="swatch" style="background:var(--series-1)"></span>on frontier</span>
-        <span class="item"><span class="swatch" style="background:var(--dot-strong)"></span>other runs</span>
+        <span class="item"><span class="swatch ring"></span>on frontier</span>
+        <span class="item"><span class="swatch ring muted"></span>other runs</span>
         <span class="item"><span class="swatch" style="background:var(--series-2)"></span>selected</span>
+        <button id="reset-view" class="link-button" type="button" hidden>reset view</button>
       </div>
     </section>
 

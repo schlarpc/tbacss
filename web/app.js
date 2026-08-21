@@ -40,6 +40,9 @@ const P0 = 20e-6;
 const MINIMISE = 'min';
 const MAXIMISE = 'max';
 
+/** Starting yaw/pitch for the 3D view, in radians. */
+const DEFAULT_VIEW_INIT = { yaw: -0.62, pitch: 0.42 };
+
 const MEASURES = [
   ['se_peak_dba', "shooter's ear, peak dBA", MINIMISE],
   ['se_peak_db', "shooter's ear, peak dB", MINIMISE],
@@ -93,6 +96,8 @@ const state = {
   sort: { column: 'se_peak_dba', direction: 1 },
   hover: null,
   filtersOpen: false,
+  zKey: null,
+  view: { ...DEFAULT_VIEW_INIT },
 };
 
 /* ------------------------------------------------------------------ helpers */
@@ -101,6 +106,21 @@ const css = (name) => getComputedStyle(document.body).getPropertyValue(name).tri
 
 function fmt(value, digits = 2) {
   return value === null || Number.isNaN(value) ? '—' : value.toFixed(digits);
+}
+
+/**
+ * A readable name for a host code.
+ *
+ * The codes are prose in each year's report rather than anything in all.csv,
+ * so `publish` ships the transcription and this reads it. An undocumented code
+ * falls back to itself rather than inventing a name.
+ */
+function hostLabel(code) {
+  return state.bundle?.catalog.hosts?.[code]?.label ?? String(code);
+}
+
+function hostDescription(code) {
+  return state.bundle?.catalog.hosts?.[code]?.description ?? null;
 }
 
 function runLabel(index) {
@@ -203,18 +223,23 @@ function axes(ctx, box, xDomain, yDomain, xLabel, yLabel, xDigits = 0, yDigits =
 
 /* ------------------------------------------------------------------ filters */
 
-function buildFacet(id, values, counts) {
+function buildFacet(id, values, counts, describe = null) {
   const host = $(id);
-  host.innerHTML = '';
+  host.textContent = '';
   for (const value of values) {
     const label = document.createElement('label');
     const box = document.createElement('input');
     box.type = 'checkbox';
     box.value = value;
     box.addEventListener('change', refilter);
-    label.append(box, document.createTextNode(
-      counts ? `${value} (${counts.get(value) ?? 0})` : String(value),
-    ));
+
+    const shown = describe ? describe(value) : String(value);
+    label.append(
+      box,
+      document.createTextNode(counts ? `${shown} (${counts.get(value) ?? 0})` : shown),
+    );
+    // The raw code stays reachable, since it is what the report prints.
+    if (describe && shown !== String(value)) label.title = String(value);
     host.append(label);
   }
 }
@@ -313,32 +338,29 @@ function refilter() {
   state.visible = maskRows(catalog, mask);
 
   // Each measure knows which way is better, so there is nothing to configure.
-  const xKey = $('axis-x').value;
-  const yKey = $('axis-y').value;
-  const xBetter = BETTER.get(xKey);
-  const yBetter = BETTER.get(yKey);
-  state.frontier =
-    xBetter && yBetter
-      ? new Set(
-          paretoFront(
-            catalog,
-            [
-              { column: xKey, direction: xBetter },
-              { column: yKey, direction: yBetter },
-            ],
-            mask,
-          ),
-        )
-      : new Set();
+  // The frontier covers every axis in play, so adding Z makes it 3-objective.
+  const active = [$('axis-x').value, $('axis-y').value];
+  if (state.zKey) active.push(state.zKey);
+  const dimension = active.find((key) => !BETTER.get(key)) ?? null;
 
-  const dimension = !xBetter ? xKey : !yBetter ? yKey : null;
+  state.frontier = dimension
+    ? new Set()
+    : new Set(
+        paretoFront(
+          catalog,
+          active.map((key) => ({ column: key, direction: BETTER.get(key) })),
+          mask,
+        ),
+      );
+
+  const phrase = active
+    .map((key) => `a ${comparative(key)} ${MEASURE_LABEL.get(key)}`)
+    .join(', ');
   $('scatter-hint').textContent = dimension
     ? `Points are test runs. No frontier here: ${MEASURE_LABEL.get(dimension)} `
       + 'is a dimension, not something to optimise.'
-    : 'Points are test runs. Filled points are on the Pareto frontier — nothing '
-      + `in the current slice has both a ${comparative(xKey)} `
-      + `${MEASURE_LABEL.get(xKey)} and a ${comparative(yKey)} `
-      + `${MEASURE_LABEL.get(yKey)}.`;
+    : 'Points are test runs. Ringed points are on the Pareto frontier — nothing '
+      + `in the current slice has all of ${phrase}.`;
 
   updateFilterBadges();
   renderTiles();
@@ -371,17 +393,79 @@ function renderTiles() {
 
 let scatterPoints = [];
 
+/** Smallest and largest actual values of a column over the visible rows. */
+function range(values, rows) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const i of rows) {
+    if (values[i] < lo) lo = values[i];
+    if (values[i] > hi) hi = values[i];
+  }
+  return [lo, hi];
+}
+
+/** The same, padded so marks do not sit on the frame. */
+function extent(values, rows) {
+  const [lo, hi] = range(values, rows);
+  const span = hi - lo || Math.abs(hi) || 1;
+  return [lo - span * 0.06, hi + span * 0.06];
+}
+
+/**
+ * Draw text with a surface-coloured halo.
+ *
+ * A 3D axis label has no margin to live in -- the cloud is behind it wherever
+ * it goes -- so it gets an outline in the surface colour instead of being
+ * moved somewhere it no longer points at.
+ */
+function haloText(ctx, text, x, y) {
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = css('--surface-1');
+  ctx.strokeText(text, x, y);
+  ctx.fillText(text, x, y);
+}
+
+/**
+ * Orthographic projection of a unit cube, yawed then pitched.
+ *
+ * Returns screen offsets plus a depth, so points can be drawn back to front
+ * and dimmed with distance -- without that the cloud reads as flat.
+ */
+function project(x, y, z, view) {
+  const cy = Math.cos(view.yaw);
+  const sy = Math.sin(view.yaw);
+  const cp = Math.cos(view.pitch);
+  const sp = Math.sin(view.pitch);
+  const rx = x * cy + z * sy;
+  const rz = -x * sy + z * cy;
+  return { x: rx, y: y * cp - rz * sp, depth: y * sp + rz * cp };
+}
+
+const CUBE_EDGES = [
+  [0, 1], [1, 3], [3, 2], [2, 0],
+  [4, 5], [5, 7], [7, 6], [6, 4],
+  [0, 4], [1, 5], [2, 6], [3, 7],
+];
+const CUBE_CORNERS = [
+  [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [0.5, 0.5, -0.5],
+  [-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [-0.5, 0.5, 0.5], [0.5, 0.5, 0.5],
+];
+
 function renderScatter() {
   const canvas = $('scatter');
   const { ctx, width, height } = prepare(canvas);
   const { catalog } = state.bundle;
   const xKey = $('axis-x').value;
   const yKey = $('axis-y').value;
-  const xs = catalog.columns[xKey];
-  const ys = catalog.columns[yKey];
+  const zKey = state.zKey;
 
-  const usable = state.visible.filter((i) => !Number.isNaN(xs[i]) && !Number.isNaN(ys[i]));
+  const columns = [catalog.columns[xKey], catalog.columns[yKey]];
+  if (zKey) columns.push(catalog.columns[zKey]);
+  const usable = state.visible.filter((i) => columns.every((c) => !Number.isNaN(c[i])));
+
   scatterPoints = [];
+  canvas.classList.toggle('rotatable', Boolean(zKey));
   if (!usable.length) {
     ctx.fillStyle = css('--text-muted');
     ctx.font = '13px system-ui, sans-serif';
@@ -390,61 +474,150 @@ function renderScatter() {
     return;
   }
 
-  const pad = (values) => {
-    let lo = Infinity;
-    let hi = -Infinity;
-    for (const i of usable) {
-      lo = Math.min(lo, values[i]);
-      hi = Math.max(hi, values[i]);
-    }
-    const span = hi - lo || Math.abs(hi) || 1;
-    return [lo - span * 0.06, hi + span * 0.06];
-  };
-
-  const box = { left: 54, top: 22, right: width - 12, bottom: height - 34 };
-  const digits = (key) => (key === 'year' ? 0 : key.includes('_in') || key === 'weight_oz' ? 1 : 0);
-  const { px, py } = axes(
-    ctx, box, pad(xs), pad(ys),
-    MEASURE_LABEL.get(xKey), MEASURE_LABEL.get(yKey),
-    digits(xKey), digits(yKey),
-  );
-
-  // Bulk points recede; the frontier is the story, so it gets the one hue.
-  // Emphasis, not identity — filtering never repaints a survivor.
-  for (const i of usable) {
-    const onFrontier = state.frontier.has(i);
-    const selected = state.selectedRun === i;
-    const x = px(xs[i]);
-    const y = py(ys[i]);
-    scatterPoints.push({ i, x, y });
-
-    ctx.beginPath();
-    ctx.arc(x, y, selected ? 6 : onFrontier ? 4.5 : 3, 0, Math.PI * 2);
-    if (selected) {
-      ctx.fillStyle = css('--series-2');
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = css('--surface-1');
-      ctx.stroke();
-    } else if (onFrontier) {
-      ctx.fillStyle = css('--series-1');
-      ctx.fill();
-    } else {
-      ctx.strokeStyle = css('--dot-strong');
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
-    }
-  }
+  if (zKey) renderScatter3D(ctx, width, height, usable, [xKey, yKey, zKey]);
+  else renderScatter2D(ctx, width, height, usable, [xKey, yKey]);
 
   if (state.hover !== null) {
     const point = scatterPoints.find((p) => p.i === state.hover);
     if (point) {
       ctx.beginPath();
-      ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+      ctx.arc(point.x, point.y, 9, 0, Math.PI * 2);
       ctx.strokeStyle = css('--series-1');
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
+  }
+}
+
+/**
+ * Draw one point.
+ *
+ * The frontier is an outline in the series hue and everything else an outline
+ * in muted ink; a *filled* mark means selected, and nothing else. Emphasis
+ * rather than identity, so filtering never repaints a survivor.
+ */
+function drawPoint(ctx, x, y, { frontier, selected, scale = 1, alpha = 1 }) {
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.arc(x, y, (selected ? 6 : frontier ? 4.5 : 3) * scale, 0, Math.PI * 2);
+  if (selected) {
+    ctx.fillStyle = css('--series-2');
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = css('--surface-1');
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = css(frontier ? '--series-1' : '--dot-strong');
+    ctx.lineWidth = frontier ? 2 : 1.2;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+const axisDigits = (key) =>
+  key === 'year' ? 0 : key.includes('_in') || key === 'weight_oz' ? 1 : 0;
+
+function renderScatter2D(ctx, width, height, usable, [xKey, yKey]) {
+  const { catalog } = state.bundle;
+  const xs = catalog.columns[xKey];
+  const ys = catalog.columns[yKey];
+  const box = { left: 54, top: 22, right: width - 12, bottom: height - 34 };
+  const { px, py } = axes(
+    ctx, box, extent(xs, usable), extent(ys, usable),
+    MEASURE_LABEL.get(xKey), MEASURE_LABEL.get(yKey),
+    axisDigits(xKey), axisDigits(yKey),
+  );
+
+  for (const i of usable) {
+    const x = px(xs[i]);
+    const y = py(ys[i]);
+    scatterPoints.push({ i, x, y });
+    drawPoint(ctx, x, y, {
+      frontier: state.frontier.has(i),
+      selected: state.selectedRun === i,
+    });
+  }
+}
+
+function renderScatter3D(ctx, width, height, usable, keys) {
+  const { catalog } = state.bundle;
+  const cols = keys.map((k) => catalog.columns[k]);
+  const domains = cols.map((c) => extent(c, usable));
+  const ranges = cols.map((c) => range(c, usable));
+  const unit = (value, [lo, hi]) => (value - lo) / (hi - lo) - 0.5;
+
+  const centreX = width / 2;
+  const centreY = height / 2 - 6;
+  const scale = Math.min(width, height) * 0.62;
+  const toScreen = (p) => ({ x: centreX + p.x * scale, y: centreY - p.y * scale });
+
+  // Cube first, so points sit on top of the frame.
+  const corners = CUBE_CORNERS.map(([x, y, z]) =>
+    toScreen(project(x, y, z, state.view)),
+  );
+  ctx.strokeStyle = css('--grid');
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (const [a, b] of CUBE_EDGES) {
+    ctx.moveTo(corners[a].x, corners[a].y);
+    ctx.lineTo(corners[b].x, corners[b].y);
+  }
+  ctx.stroke();
+
+  // One label per axis, at the midpoint of a leading edge, with its range.
+  ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const axisEdges = [
+    [0, 1, 0], // x along the bottom front edge
+    [0, 2, 1], // y up the left front edge
+    [0, 4, 2], // z into the scene
+  ];
+  for (const [a, b, axis] of axisEdges) {
+    const mid = {
+      x: (corners[a].x + corners[b].x) / 2,
+      y: (corners[a].y + corners[b].y) / 2,
+    };
+    const away = {
+      x: mid.x - centreX,
+      y: mid.y - centreY,
+    };
+    const length = Math.hypot(away.x, away.y) || 1;
+    const lx = mid.x + (away.x / length) * 34;
+    const ly = mid.y + (away.y / length) * 34;
+    ctx.fillStyle = css('--text-secondary');
+    haloText(ctx, MEASURE_LABEL.get(keys[axis]), lx, ly);
+    // Quote the data's own range, not the padded drawing domain -- padding a
+    // weight down to -1.8 oz reads as a measurement, and it is not one.
+    ctx.fillStyle = css('--text-muted');
+    const [lo, hi] = ranges[axis];
+    const digits = axisDigits(keys[axis]);
+    haloText(ctx, `${lo.toFixed(digits)} → ${hi.toFixed(digits)}`, lx, ly + 13);
+  }
+
+  // Painter's algorithm: far points first, dimmer and smaller.
+  const projected = usable.map((i) => {
+    const p = project(
+      unit(cols[0][i], domains[0]),
+      unit(cols[1][i], domains[1]),
+      unit(cols[2][i], domains[2]),
+      state.view,
+    );
+    const screen = toScreen(p);
+    return { i, x: screen.x, y: screen.y, depth: p.depth };
+  });
+  projected.sort((a, b) => a.depth - b.depth);
+
+  for (const point of projected) {
+    scatterPoints.push(point);
+    // depth runs about -0.87..0.87 for a unit cube; map to a gentle cue.
+    const near = (point.depth + 0.9) / 1.8;
+    drawPoint(ctx, point.x, point.y, {
+      frontier: state.frontier.has(point.i),
+      selected: state.selectedRun === point.i,
+      scale: 0.78 + near * 0.44,
+      alpha: 0.45 + near * 0.55,
+    });
   }
 }
 
@@ -464,13 +637,24 @@ function showTooltip(tip, canvas, point) {
   tip.textContent = '';
   const title = document.createElement('strong');
   title.textContent = runLabel(i);
+  const code = dict('cartridge');
   const context = document.createElement('div');
   context.className = 'dim';
   context.textContent =
-    `${dict('caliber')} on ${dict('cartridge')} · ${catalog.columns.year[i]}`;
+    `${dict('caliber')} on ${hostLabel(code)} · ${catalog.columns.year[i]}`;
   tip.append(title, context);
 
-  for (const key of [xKey, yKey]) {
+  const description = hostDescription(code);
+  if (description) {
+    const gun = document.createElement('div');
+    gun.className = 'dim';
+    gun.textContent = description;
+    tip.append(gun);
+  }
+
+  const keys = [xKey, yKey];
+  if (state.zKey) keys.push(state.zKey);
+  for (const key of keys) {
     const line = document.createElement('div');
     line.append(document.createTextNode(`${MEASURE_LABEL.get(key)}: `));
     const value = document.createElement('strong');
@@ -514,8 +698,9 @@ function bindScatter() {
 
   // Touch has no hover, so a tap does both jobs: it selects the run and leaves
   // the readout on screen until the next tap.
-  canvas.addEventListener('pointerdown', (event) => {
+  canvas.addEventListener('pointerup', (event) => {
     if (event.pointerType !== 'touch') return;
+    if (bindRotation.isDragging?.()) return;
     const point = nearestPoint(event);
     if (!point) {
       tip.hidden = true;
@@ -527,7 +712,7 @@ function bindScatter() {
   });
 
   canvas.addEventListener('pointermove', (event) => {
-    if (event.pointerType === 'touch') return;
+    if (event.pointerType === 'touch' || bindRotation.isDragging?.()) return;
     const point = nearestPoint(event);
     state.hover = point ? point.i : null;
     if (!point) {
@@ -549,8 +734,9 @@ function bindScatter() {
   });
 
   canvas.addEventListener('click', (event) => {
-    // Touch already handled this on pointerdown.
+    // Touch already handled this on pointerup, and a drag is not a click.
     if (event.pointerType === 'touch') return;
+    if (bindRotation.isDragging?.()) return;
     const point = nearestPoint(event);
     if (point) selectRun(point.i);
   });
@@ -616,11 +802,13 @@ function renderTable() {
       if (optional) td.dataset.optional = '';
       const dict = catalog.dictionaries[columnKey];
       const raw = catalog.columns[columnKey][i];
-      td.textContent = dict
-        ? dict[raw] ?? '—'
-        : columnKey === 'year'
-          ? String(raw)
-          : fmt(raw);
+      if (dict) {
+        const value = dict[raw] ?? '—';
+        td.textContent = columnKey === 'cartridge' ? hostLabel(value) : value;
+        if (columnKey === 'cartridge') td.title = value;
+      } else {
+        td.textContent = columnKey === 'year' ? String(raw) : fmt(raw);
+      }
       tr.append(td);
     }
     body.append(tr);
@@ -881,9 +1069,19 @@ function fillAxisMenus() {
     const column = catalog.columns[key];
     return column && [...column].some((v) => !Number.isNaN(v));
   });
-  for (const [id, initial] of [['axis-x', 'weight_oz'], ['axis-y', 'se_peak_dba']]) {
+  for (const [id, initial] of [
+    ['axis-x', 'weight_oz'],
+    ['axis-y', 'se_peak_dba'],
+    ['axis-z', ''],
+  ]) {
     const select = $(id);
     select.textContent = '';
+    if (id === 'axis-z') {
+      const none = document.createElement('option');
+      none.value = '';
+      none.textContent = '(none — keep it 2D)';
+      select.append(none);
+    }
     for (const [key, label] of available) {
       const option = document.createElement('option');
       option.value = key;
@@ -891,8 +1089,71 @@ function fillAxisMenus() {
       select.append(option);
     }
     select.value = initial;
-    select.addEventListener('change', refilter);
+    select.addEventListener('change', () => {
+      if (id === 'axis-z') {
+        state.zKey = select.value || null;
+        state.view = { ...DEFAULT_VIEW_INIT };
+        $('reset-view').hidden = !state.zKey;
+      }
+      refilter();
+    });
   }
+}
+
+/**
+ * Drag to rotate the 3D view.
+ *
+ * A drag and a tap start the same way, so a pointer that moves less than a few
+ * pixels is still treated as a selection rather than a rotation nobody asked
+ * for.
+ */
+function bindRotation() {
+  const canvas = $('scatter');
+  let dragging = null;
+
+  canvas.addEventListener('pointerdown', (event) => {
+    bindRotation.wasDrag = false;
+    if (!state.zKey) return;
+    dragging = { x: event.clientX, y: event.clientY, moved: 0, view: { ...state.view } };
+    canvas.setPointerCapture(event.pointerId);
+  });
+
+  canvas.addEventListener('pointermove', (event) => {
+    if (!dragging) return;
+    const dx = event.clientX - dragging.x;
+    const dy = event.clientY - dragging.y;
+    dragging.moved = Math.max(dragging.moved, Math.hypot(dx, dy));
+    if (dragging.moved < 4) return;
+    state.view = {
+      yaw: dragging.view.yaw + dx * 0.008,
+      // Stop short of the poles, where the cube degenerates to a line.
+      pitch: Math.max(-1.45, Math.min(1.45, dragging.view.pitch + dy * 0.008)),
+    };
+    renderScatter();
+  });
+
+  const release = (event) => {
+    if (!dragging) return;
+    // This listener runs before the selection handlers, so clearing `dragging`
+    // here would let the pointerup that ended a rotation also select a run.
+    // The verdict has to outlive the gesture; the next pointerdown resets it.
+    bindRotation.wasDrag = dragging.moved >= 4;
+    dragging = null;
+    if (canvas.hasPointerCapture?.(event.pointerId)) {
+      canvas.releasePointerCapture(event.pointerId);
+    }
+  };
+  canvas.addEventListener('pointerup', release);
+  canvas.addEventListener('pointercancel', release);
+
+  $('reset-view').addEventListener('click', () => {
+    state.view = { ...DEFAULT_VIEW_INIT };
+    renderScatter();
+  });
+
+  /** True during a rotation, or for the gesture that just ended in one. */
+  bindRotation.isDragging = () =>
+    (Boolean(dragging) && dragging.moved >= 4) || bindRotation.wasDrag === true;
 }
 
 function countsFor(column) {
@@ -915,19 +1176,25 @@ async function main() {
 
   const years = [...new Set([...catalog.columns.year])].sort();
   buildFacet('facet-year', years, null);
-  for (const [id, column] of [
-    ['facet-caliber', 'caliber'],
-    ['facet-cartridge', 'cartridge'],
-    ['facet-manufacturer', 'manufacturer'],
+
+  // Calibers and hosts are easiest to scan by how much data sits behind them;
+  // makers are a long list somebody looks a name up in, so those go A-Z.
+  for (const [id, column, order] of [
+    ['facet-caliber', 'caliber', 'count'],
+    ['facet-cartridge', 'cartridge', 'count'],
+    ['facet-manufacturer', 'manufacturer', 'name'],
   ]) {
     const counts = countsFor(column);
+    const collate = (a, b) =>
+      String(a).localeCompare(String(b), undefined, { sensitivity: 'base' });
     const values = [...counts.keys()].sort((a, b) =>
-      counts.get(b) - counts.get(a) || String(a).localeCompare(String(b)),
+      order === 'name' ? collate(a, b) : counts.get(b) - counts.get(a) || collate(a, b),
     );
-    buildFacet(id, values, counts);
+    buildFacet(id, values, counts, column === 'cartridge' ? hostLabel : null);
   }
 
   fillAxisMenus();
+  bindRotation();
   bindScatter();
 
   for (const id of ['q', 'min-weight', 'max-weight', 'min-length', 'max-length', 'baselines']) {
@@ -941,25 +1208,40 @@ async function main() {
     refilter();
   });
 
-  const datasets = catalog.datasets ?? [];
-  const yearsCovered = datasets.map((d) => d.year).sort();
+  const datasets = [...(catalog.datasets ?? [])].sort((a, b) => a.year - b.year);
+  const covered = datasets.map((d) => d.year);
   $('coverage').textContent =
-    `${catalog.n.toLocaleString()} test runs · ${yearsCovered[0]}–${yearsCovered.at(-1)}`;
+    `${catalog.n.toLocaleString()} test runs · ${covered[0]}–${covered.at(-1)}`;
+
+  // The attribution has to name the years anyway, so each year *is* its link
+  // rather than repeating them in a second "2023 report · 2024 report" list.
   const footnote = $('footnote');
-  footnote.textContent =
-    `Sound data from the ${yearsCovered.join(', ')} TBAC Silencer Summits, ` +
-    'Thunder Beast Arms Corporation. ';
+  footnote.textContent = 'Sound data from the ';
   datasets.forEach((dataset, position) => {
-    if (position) footnote.append(document.createTextNode(' · '));
-    const link = document.createElement('a');
-    // href is set as a property, and only for http(s), so a hostile bundle
-    // cannot smuggle in a javascript: URL.
+    if (position) {
+      footnote.append(
+        document.createTextNode(position === datasets.length - 1 ? ' and ' : ', '),
+      );
+    }
     const url = String(dataset.report_url ?? '');
-    if (/^https?:\/\//i.test(url)) link.href = url;
-    link.rel = 'noreferrer';
-    link.textContent = `${dataset.year} report`;
-    footnote.append(link);
+    if (/^https?:\/\//i.test(url)) {
+      const link = document.createElement('a');
+      // href is set as a property and only for http(s), so a hostile bundle
+      // cannot smuggle in a javascript: URL.
+      link.href = url;
+      link.rel = 'noreferrer';
+      link.title = `${dataset.year} Silencer Summit results`;
+      link.textContent = String(dataset.year);
+      footnote.append(link);
+    } else {
+      footnote.append(document.createTextNode(String(dataset.year)));
+    }
   });
+  footnote.append(
+    document.createTextNode(
+      ' TBAC Silencer Summits, Thunder Beast Arms Corporation.',
+    ),
+  );
 
   $('theme').addEventListener('click', () => {
     const root = document.documentElement;

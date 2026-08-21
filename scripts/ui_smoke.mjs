@@ -51,6 +51,10 @@ await call('Emulation.setDeviceMetricsOverride', {
 });
 await call('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
 await call('Page.enable');
+// The dev server sends no-store, but a browser started before that change can
+// still be holding a cached bundle. Never test against yesterday's data.
+await call('Network.enable');
+await call('Network.setCacheDisabled', { cacheDisabled: true });
 
 async function evaluate(expression) {
   const { result, exceptionDetails } = await call('Runtime.evaluate', {
@@ -172,13 +176,70 @@ check(
   await evaluate("document.getElementById('wave-hint').textContent.slice(0, 60)"),
 );
 
-// 7. Nothing overflows the viewport horizontally.
+// 7. The Z axis punches it into 3D and widens the frontier.
+const frontier2D = await evaluate(
+  "document.querySelectorAll('.tile')[1].querySelector('.value').textContent",
+);
+await evaluate(`(() => {
+  const z = document.getElementById('axis-z');
+  z.value = 'length_in';
+  z.dispatchEvent(new Event('change'));
+})()`);
+await new Promise((r) => setTimeout(r, 600));
+const frontier3D = await evaluate(
+  "document.querySelectorAll('.tile')[1].querySelector('.value').textContent",
+);
+check(
+  'a third objective can only grow the frontier',
+  Number(frontier3D) >= Number(frontier2D),
+  `${frontier2D} → ${frontier3D}`,
+);
+check(
+  'the plot becomes rotatable',
+  await evaluate("document.getElementById('scatter').classList.contains('rotatable')"),
+);
+
+// Dragging rotates rather than selecting.
+const centre = await evaluate(`(() => {
+  const r = document.getElementById('scatter').getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+})()`);
+const before3D = await evaluate("document.getElementById('wave-title').textContent");
+await call('Input.dispatchTouchEvent', {
+  type: 'touchStart',
+  touchPoints: [{ x: centre.x, y: centre.y }],
+});
+for (const step of [12, 26, 44]) {
+  await call('Input.dispatchTouchEvent', {
+    type: 'touchMove',
+    touchPoints: [{ x: centre.x + step, y: centre.y + step / 2 }],
+  });
+}
+await call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+await new Promise((r) => setTimeout(r, 500));
+check(
+  'a drag rotates instead of selecting',
+  (await evaluate("document.getElementById('wave-title').textContent")) === before3D,
+);
+
+await evaluate(`(() => {
+  const z = document.getElementById('axis-z');
+  z.value = '';
+  z.dispatchEvent(new Event('change'));
+})()`);
+await new Promise((r) => setTimeout(r, 400));
+check(
+  'clearing Z returns to 2D',
+  !(await evaluate("document.getElementById('scatter').classList.contains('rotatable')")),
+);
+
+// 8. Nothing overflows the viewport horizontally.
 const overflow = await evaluate(
   'document.documentElement.scrollWidth - document.documentElement.clientWidth',
 );
 check('no horizontal overflow', overflow <= 0, `${overflow}px`);
 
-// 8. Touch targets are big enough to hit.
+// 9. Touch targets are big enough to hit.
 const small = await evaluate(`(() => {
   const bad = [];
   for (const el of document.querySelectorAll('button, select, input, summary')) {
