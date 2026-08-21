@@ -51,6 +51,30 @@ def test_an_undocumented_barrel_is_none_not_a_guess():
     assert HOSTS[".375RUM-BA"].cycling == "manual"  # "-BA" and a bolt gun
 
 
+def test_barrel_source_matches_whether_there_is_a_barrel():
+    for code, host in HOSTS.items():
+        assert (host.barrel_in is None) == (host.barrel_source is None), code
+        assert host.barrel_source in ("report", "model", None), code
+
+
+def test_a_looked_up_barrel_is_marked_as_such():
+    """The P322's 4" is the model's published spec, not TBAC's text."""
+    assert HOSTS[".22LR-PS"].barrel_in == 4
+    assert HOSTS[".22LR-PS"].barrel_source == "model"
+    assert HOSTS["5.56-16AR"].barrel_source == "report"
+
+
+def test_an_ambiguous_model_stays_unknown():
+    """The METE SFx is 5.20" and the SFx Pro 5.74"; the report says neither.
+
+    This is the largest barrel gap in the set (73 runs) and looking the model
+    up does not close it -- TBAC needed a threaded barrel, which points at the
+    Pro, but pointing is not the same as knowing.
+    """
+    assert HOSTS["9mm-PS"].barrel_in is None
+    assert HOSTS["9mm-PS"].barrel_source is None
+
+
 def test_subsonic_is_tri_state():
     assert HOSTS[".300BO-16BA"].subsonic is True
     assert HOSTS["5.56-16AR"].subsonic is False

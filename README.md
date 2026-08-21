@@ -309,12 +309,20 @@ python3 -m pytest
   length matters because a can on a 10.3" MK18 and the same can on a 20" bolt
   gun are not comparable numbers.
 
-  Values are either stated in the report or are facts about the named firearm
-  — a Marlin 1895 is a lever action, a Volquartsen Summit is a bolt gun. Where
-  the report names no barrel and no gun specific enough to pin one down, the
-  field is null rather than a guess. `host_ammo` is tri-state for the same
-  reason: 124gr 9mm sits on the transonic line, so it is "not stated" rather
-  than being called supersonic.
+  Values are either stated in the report, or are facts about the named firearm
+  — a Marlin 1895 is a lever action, a Volquartsen Summit is a bolt gun.
+  `barrel_source` records which: `report` for 1010 runs, `model` for 69 where
+  the report omits a length but names a gun with one published spec (the Sig
+  P322's 4", the MP5K's 4.5"). A stated length is a measurement of the gun
+  that fired; a looked-up one assumes TBAC used the stock configuration, and
+  the tooltip says so.
+
+  Where neither settles it the field is null rather than a guess. The largest
+  gap is deliberate: `9mm-PS` is 73 runs, and the METE SFx ships with a 5.20"
+  barrel while the SFx Pro has a 5.74" threaded one. TBAC needed threads to
+  mount a can, which points at the Pro — but pointing is not knowing, so it
+  stays null. `host_ammo` is tri-state for the same reason: 124gr 9mm sits on
+  the transonic line, so it is "not stated" rather than called supersonic.
 
   Neither is an objective — you control for a barrel length, you do not
   minimise it — so both are `null` direction and putting one on an axis

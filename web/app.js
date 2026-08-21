@@ -653,7 +653,12 @@ function showTooltip(tip, canvas, point) {
   if (description) {
     const gun = document.createElement('div');
     gun.className = 'dim';
-    gun.textContent = description;
+    const host = state.bundle.catalog.hosts?.[code] ?? {};
+    // Say when a barrel length is the model's published spec rather than
+    // something TBAC wrote down, so it is not mistaken for a measurement.
+    const barrel =
+      host.barrel_source === 'model' ? ` (${host.barrel_in}" barrel, model spec)` : '';
+    gun.textContent = description + barrel;
     tip.append(gun);
   }
 

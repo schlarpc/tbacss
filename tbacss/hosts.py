@@ -56,6 +56,12 @@ class Host:
     label: str
     description: str
     barrel_in: float | None = None
+    # Where barrel_in came from: "report" if TBAC stated it, "model" if it is
+    # the published spec of a firearm they named unambiguously. None when
+    # barrel_in is None. The distinction is worth keeping -- a stated length is
+    # a measurement of the gun that fired, a looked-up one assumes TBAC used
+    # the stock configuration.
+    barrel_source: str | None = None
     cycling: str | None = None
     platform: str | None = None
     integral: bool = False
@@ -75,46 +81,51 @@ HOSTS: dict[str, Host] = {
     # -- standard hosts, 2024 onwards -------------------------------------
     "5.56-16AR": _h(
         '5.56, 16" AR', 'LC M193 55gr 5.56 from a Daniel Defense 16" AR-15',
-        barrel_in=16, cycling="semi", platform="AR", grains=55,
+        barrel_in=16, barrel_source="report", cycling="semi", platform="AR", grains=55,
         subsonic=False,
     ),
     ".308-20BA": _h(
         '.308, 20" bolt', 'M118LR 175gr from a 20" Accuracy International AX',
-        barrel_in=20, cycling="manual", platform="bolt", grains=175,
+        barrel_in=20, barrel_source="report", cycling="manual", platform="bolt", grains=175,
         subsonic=False,
     ),
     ".300BO-16BA": _h(
         '.300 BLK subsonic, 16" bolt',
         '220gr subsonic Ammo Inc Stelth .300 Blackout from a 16" bolt action',
-        barrel_in=16, cycling="manual", platform="bolt", subsonic=True, grains=220,
+        barrel_in=16, barrel_source="report", cycling="manual", platform="bolt", subsonic=True, grains=220,
     ),
     ".300WM-BA": _h(
         '.300 Win Mag, 26" bolt',
         'Federal 150gr soft point .300 Win Mag from a 26" Savage 110',
-        barrel_in=26, cycling="manual", platform="bolt", grains=150,
+        barrel_in=26, barrel_source="report", cycling="manual", platform="bolt", grains=150,
         subsonic=False,
     ),
     ".300BO-16AR-SUB": _h(
         '.300 BLK subsonic, 16" AR',
         '220gr subsonic Ammo Inc Stelth .300 Blackout from a Daniel Defense 16" AR',
-        barrel_in=16, cycling="semi", platform="AR", subsonic=True, grains=220,
+        barrel_in=16, barrel_source="report", cycling="semi", platform="AR", subsonic=True, grains=220,
     ),
+    # 73 runs, the largest hole in barrel_in, and it stays a hole on purpose:
+    # the METE SFx ships with a 5.20" barrel and the SFx Pro with a 5.74"
+    # threaded one, TBAC needed threads to mount a can, and they wrote only
+    # "Canik METESFX". Picking one would be a guess dressed as a spec.
     "9mm-PS": _h(
         "9mm pistol", "Ammo Inc Stelth 165gr from a Canik METE SFX pistol",
         cycling="semi", platform="pistol", subsonic=True, grains=165,
     ),
     ".22LR-PS": _h(
-        ".22 LR pistol", "CCI Standard Velocity from a Sig P322 pistol",
+        '.22 LR pistol, 4"', "CCI Standard Velocity from a Sig P322 pistol",
+        barrel_in=4, barrel_source="model",
         cycling="semi", platform="pistol", subsonic=True,
     ),
     ".22LR-BA": _h(
         '.22 LR, 16.5" bolt',
         'CCI Standard Velocity from a 16.5" Volquartsen Summit bolt action',
-        barrel_in=16.5, cycling="manual", platform="bolt", subsonic=True,
+        barrel_in=16.5, barrel_source="report", cycling="manual", platform="bolt", subsonic=True,
     ),
     "5.56-105AR": _h(
         '5.56, 10.5" AR', 'LC M193 55gr from a 10.5" AR',
-        barrel_in=10.5, cycling="semi", platform="AR", grains=55,
+        barrel_in=10.5, barrel_source="report", cycling="semi", platform="AR", grains=55,
         subsonic=False,
     ),
     "9mm-19X": _h(
@@ -126,22 +137,22 @@ HOSTS: dict[str, Host] = {
     "5.56": _h(
         '5.56, 10.3" MK18',
         'LC M193 55gr from a Daniel Defense MK18 (10.3") with an H2 buffer',
-        barrel_in=10.3, cycling="semi", platform="AR", grains=55,
+        barrel_in=10.3, barrel_source="report", cycling="semi", platform="AR", grains=55,
         subsonic=False,
     ),
     ".308": _h(
         '.308, 20" bolt', 'LC M118LR 175gr from a 20" Accuracy International AXSA',
-        barrel_in=20, cycling="manual", platform="bolt", grains=175,
+        barrel_in=20, barrel_source="report", cycling="manual", platform="bolt", grains=175,
         subsonic=False,
     ),
     ".338LM": _h(
         '.338 Lapua, 24" bolt', 'Hornady 285gr ELD from a 24" Barrett MRAD',
-        barrel_in=24, cycling="manual", platform="bolt", grains=285,
+        barrel_in=24, barrel_source="report", cycling="manual", platform="bolt", grains=285,
         subsonic=False,
     ),
     "5.56-MK12": _h(
         '5.56, 18" MK12', 'LC M193 55gr from an 18" MK12 SPR clone',
-        barrel_in=18, cycling="semi", platform="AR", grains=55,
+        barrel_in=18, barrel_source="report", cycling="semi", platform="AR", grains=55,
         subsonic=False,
     ),
     "9mm": _h(
@@ -154,10 +165,12 @@ HOSTS: dict[str, Host] = {
     ),
     "9mm-MP5K": _h(
         "9mm MP5K", "CCI Blazer Brass 124gr from an HK MP5K/SP5K",
+        barrel_in=4.5, barrel_source="model",
         cycling="semi", platform="PCC", grains=124,
     ),
     "9mmSTTH-MP5K": _h(
         "9mm subsonic MP5K", "Ammo Inc Stelth 165gr from an HK MP5K/SP5K",
+        barrel_in=4.5, barrel_source="model",
         cycling="semi", platform="PCC", subsonic=True, grains=165,
     ),
     "9mm-CZ": _h(
@@ -171,13 +184,13 @@ HOSTS: dict[str, Host] = {
     ".45-70FP": _h(
         '.45-70, 16" lever',
         'Hornady LEVERevolution 325gr FTX from a Marlin 1895, 16" barrel',
-        barrel_in=16, cycling="manual", platform="lever", grains=325,
+        barrel_in=16, barrel_source="report", cycling="manual", platform="lever", grains=325,
         subsonic=False,
     ),
     ".45-70SUB": _h(
         '.45-70 subsonic, 16" lever',
         'Defiant Munitions 400gr TCX-S subsonic from a Marlin 1895, 16" barrel',
-        barrel_in=16, cycling="manual", platform="lever", subsonic=True, grains=400,
+        barrel_in=16, barrel_source="report", cycling="manual", platform="lever", subsonic=True, grains=400,
     ),
     "hand": _h(
         "a hand clap", "the sound of a hand clap, recorded as a reference",
@@ -189,27 +202,27 @@ HOSTS: dict[str, Host] = {
     ),
     "5.56-11.5AR": _h(
         '5.56, 11.5" AR', "Allen Engineering's 11.5\" AR",
-        barrel_in=11.5, cycling="semi", platform="AR", grains=55,
+        barrel_in=11.5, barrel_source="report", cycling="semi", platform="AR", grains=55,
         subsonic=False,
     ),
     "5.56-12.5AR": _h(
         '5.56, 12.5" AR', "Allen Engineering's 12.5\" AR",
-        barrel_in=12.5, cycling="semi", platform="AR", grains=55,
+        barrel_in=12.5, barrel_source="report", cycling="semi", platform="AR", grains=55,
         subsonic=False,
     ),
     "5.56-14.5AR": _h(
         '5.56, 14.5" AR', "Allen Engineering's 14.5\" AR",
-        barrel_in=14.5, cycling="semi", platform="AR", grains=55,
+        barrel_in=14.5, barrel_source="report", cycling="semi", platform="AR", grains=55,
         subsonic=False,
     ),
     "5.56-AE12.5AR": _h(
         '5.56, 12.5" AE AR', "Allen Engineering's 12.5\" AR",
-        barrel_in=12.5, cycling="semi", platform="AR", grains=55,
+        barrel_in=12.5, barrel_source="report", cycling="semi", platform="AR", grains=55,
         subsonic=False,
     ),
     "5.56-AE18AR": _h(
         '5.56, 18" AE AR', "Allen Engineering's 18\" AR",
-        barrel_in=18, cycling="semi", platform="AR", grains=55,
+        barrel_in=18, barrel_source="report", cycling="semi", platform="AR", grains=55,
         subsonic=False,
     ),
     "5.56-MK12AR": _h(
@@ -219,17 +232,17 @@ HOSTS: dict[str, Host] = {
     ),
     "13.7-5.56-Infidel": _h(
         '5.56, 13.7" Infidel', 'a 13.7" Noveske Infidel AR',
-        barrel_in=13.7, cycling="semi", platform="AR", grains=55,
+        barrel_in=13.7, barrel_source="report", cycling="semi", platform="AR", grains=55,
         subsonic=False,
     ),
     "6.5GREN-20AR": _h(
         '6.5 Grendel, 20" AR', "W.T.F.'s 20\" 6.5 Grendel AR",
-        barrel_in=20, cycling="semi", platform="AR",
+        barrel_in=20, barrel_source="report", cycling="semi", platform="AR",
         subsonic=False,
     ),
     "6ARC-16AR": _h(
         '6mm ARC, 16" AR', "Allen Engineering's 16\" 6mm ARC AR",
-        barrel_in=16, cycling="semi", platform="AR",
+        barrel_in=16, barrel_source="report", cycling="semi", platform="AR",
         subsonic=False,
     ),
     "6CM-BA": _h(
@@ -257,18 +270,18 @@ HOSTS: dict[str, Host] = {
     ),
     ".308-24BA": _h(
         '.308, 24" B&T', "B&T's 24\" .308 shooting M118LR",
-        barrel_in=24, cycling="manual", platform="bolt", grains=175,
+        barrel_in=24, barrel_source="report", cycling="manual", platform="bolt", grains=175,
         subsonic=False,
     ),
     ".338LM-26BA": _h(
         '.338 Lapua, 26" MRAD', 'Hornady 285gr ELD from a 26" Barrett MRAD',
-        barrel_in=26, cycling="manual", platform="bolt", grains=285,
+        barrel_in=26, barrel_source="report", cycling="manual", platform="bolt", grains=285,
         subsonic=False,
     ),
     ".338LM-SAKO": _h(
         '.338 Lapua, 27" Sako',
         'Sako 250gr from a 27" Sako TRG M10, provided by Elite Iron',
-        barrel_in=27, cycling="manual", platform="bolt", grains=250,
+        barrel_in=27, barrel_source="report", cycling="manual", platform="bolt", grains=250,
         subsonic=False,
     ),
     ".375RUM-BA": _h(
@@ -286,7 +299,7 @@ HOSTS: dict[str, Host] = {
     ),
     ".50BW-SUB-10.5AR": _h(
         '.50 Beowulf subsonic, 10.5" AR', 'subsonic .50 Beowulf from a 10.5" AR',
-        barrel_in=10.5, cycling="semi", platform="AR", subsonic=True,
+        barrel_in=10.5, barrel_source="report", cycling="semi", platform="AR", subsonic=True,
     ),
     "5.7-PS": _h(
         "5.7 pistol", "Ecco's Caracal 5.7 pistol",
@@ -303,11 +316,11 @@ HOSTS: dict[str, Host] = {
     ),
     "9mm-EI-PCC": _h(
         '9mm, 8.5" AR9', 'an 8.5" AR9 provided by Elite Iron, Ammo Inc Stelth 165gr',
-        barrel_in=8.5, cycling="semi", platform="PCC", subsonic=True, grains=165,
+        barrel_in=8.5, barrel_source="report", cycling="semi", platform="PCC", subsonic=True, grains=165,
     ),
     "9mm-5AR": _h(
         '9mm, 5" AR9', 'a 5" AR9',
-        barrel_in=5, cycling="semi", platform="PCC",
+        barrel_in=5, barrel_source="report", cycling="semi", platform="PCC",
     ),
     "10mm-SUB-Stribog": _h(
         "10mm subsonic Stribog", "a Grand Power Stribog shooting subsonic 10mm",
