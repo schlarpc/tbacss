@@ -66,6 +66,7 @@ done
 python -m tbacss build tbacss.db --year 2026 --summary-csv summit2026/all.csv
 
 python -m tbacss analyze tbacss.db      # per-shot metrics from the waveforms
+python -m tbacss bands tbacss.db        # one-third-octave spectra, for the shape
 ```
 
 The tarball is streamed, so the expanded text never hits disk. `--archive`
@@ -235,6 +236,7 @@ shipping precomputed curves.
 | `summary_metric` | run × mic, straight from `all.csv` |
 | `waveform` | run × mic × shot, with the samples as a compressed blob |
 | `shot_metric` | run × mic × shot, recomputed by `analyze` |
+| `band_level` | run × mic × shot, 30 one-third-octave levels, from `bands` |
 
 Three views flatten the common cases: `v_measurement` (one row per run per
 mic), `v_run` (one row per run, all mics pivoted, plus cylinder volume), and
@@ -246,6 +248,42 @@ so nothing is lost relative to the release set. (The `fixed2-rice-v1` codec is
 for the web bundle, where halving the bytes on the wire matters; the database
 keeps the plain float32 so any tool can read it.) The full PULSE header and
 footer tags are kept verbatim in `waveform.header_json` / `waveform.tags_json`.
+
+## Derived analyses
+
+`all.csv` gives one shot-averaged number per run per mic, printed to two
+decimals. `tbacss/derive.py` adds four things that number cannot express, all
+computed from `shot_metric` and `band_level` — no waveform is re-read.
+
+**Uncertainty.** Five shots have a spread: the median shot-to-shot standard
+deviation is 1.46 dBA, so the mean carries a standard error near 0.65 dBA. The
+published figures resolve to 0.01 dB, which invites rankings the measurement
+cannot support — the eight quietest .223 cans on `5.56-16AR` span 1.72 dBA in
+total, under three standard errors end to end. Every `*_dba`/`*_db` column in
+the web bundle has a `*_sem` companion, the scatter draws ±1 SEM bars whenever
+the slice is sparse enough to read them, and the readout says how many other
+visible runs are *not* distinguishable from the one you picked.
+
+**First-round pop.** The first shot through a cold, air-filled can is louder;
+the median is +1.11 dBA and it is positive in 72% of run/mic combinations.
+Averaging five shots hides it, and it is the shot that matters in the field.
+
+**Net reduction.** TBAC fires an unsuppressed reference on most hosts, so "how
+much quieter" is computable for 629 runs, spanning +6.18 to +41.41 dBA. Only a
+reference fired the same year on the same host counts as a baseline. This is
+the one measure where **more is better**, which is why frontier direction is a
+per-measure property rather than a global setting.
+
+**Spectral shape.** `tbacss bands` computes 30 one-third-octave levels
+(IEC 61260 preferred centres, 25 Hz to 20 kHz) per shot, Parseval-checked
+against a direct periodogram to 0.0000 dB. Shots are averaged in energy, not in
+decibels. Two scalars come out of it — energy at or below 250 Hz, where
+A-weighting has rolled off ~9 dB and stops reporting what you feel, and the
+spectral centroid. The chart plots energy *per Hz*: proportional-bandwidth
+bands widen as they climb, so raw band levels slope up about 1 dB per band on
+any signal and read as "it's all treble" regardless of content. The stored
+levels are raw — the energy sums need the widths in — and only the plot divides
+them out.
 
 ## Verification
 

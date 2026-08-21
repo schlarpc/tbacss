@@ -156,6 +156,64 @@ def _cmd_analyze(args) -> int:
     return 1 if failed else 0
 
 
+def _cmd_bands(args) -> int:
+    """Compute one-third-octave levels for every waveform."""
+    import sqlite3
+
+    import numpy as np
+
+    from .analysis import BAND_CENTRES, third_octave_levels
+    from .build import _migrate
+    from . import blobs
+    from .webexport import _analysis_window
+
+    write = sqlite3.connect(args.database)
+    write.executescript((Path(__file__).with_name("schema.sql")).read_text())
+    _migrate(write)
+    if args.replace:
+        write.execute("DELETE FROM band_level")
+    write.commit()
+
+    with SummitDB(args.database) as db:
+        todo = db.query(
+            """SELECT w.id, w.codec, w.dt_s, w.sample_rate_hz, r.cartridge, d.year
+               FROM waveform w
+               JOIN test_run r ON r.id = w.test_run_id
+               JOIN dataset d ON d.id = r.dataset_id
+               WHERE (? IS NULL OR d.year = ?)
+                 AND w.id NOT IN (SELECT waveform_id FROM band_level)
+               ORDER BY w.id""",
+            (args.year, args.year),
+        )
+        total, done = len(todo), 0
+        for row in todo:
+            blob = db.query(
+                "SELECT samples FROM waveform WHERE id = ?", (row["id"],)
+            )[0]["samples"]
+            window = _analysis_window(
+                blobs.decode(blob, row["codec"]),
+                row["dt_s"],
+                row["cartridge"],
+                row["year"],
+            )
+            levels = third_octave_levels(window, row["sample_rate_hz"])
+            write.execute(
+                "INSERT OR REPLACE INTO band_level (waveform_id, n_bands, levels)"
+                " VALUES (?, ?, ?)",
+                (row["id"], len(BAND_CENTRES), levels.astype("<f4").tobytes()),
+            )
+            done += 1
+            if done % 250 == 0:
+                write.commit()
+                sys.stderr.write(f"\r{done}/{total} waveforms banded")
+                sys.stderr.flush()
+    write.commit()
+    write.close()
+    sys.stderr.write("\r" + " " * 60 + "\r")
+    print(f"banded {done} waveforms into {len(BAND_CENTRES)} bands each")
+    return 0
+
+
 def _cmd_verify(args) -> int:
     """Recompute the published table from the stored waveforms and diff it."""
     from .analysis import ShotMetrics, average_metrics, shot_metrics
@@ -330,6 +388,12 @@ def main(argv=None) -> int:
     p.add_argument("--year", type=int, default=None)
     p.add_argument("--replace", action="store_true", help="recompute everything")
     p.set_defaults(func=_cmd_analyze)
+
+    p = sub.add_parser("bands", help="one-third-octave levels for every waveform")
+    p.add_argument("database")
+    p.add_argument("--year", type=int, default=None)
+    p.add_argument("--replace", action="store_true")
+    p.set_defaults(func=_cmd_bands)
 
     p = sub.add_parser(
         "verify", help="recompute all.csv from the waveforms and diff it"

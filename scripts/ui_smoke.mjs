@@ -334,13 +334,94 @@ check(
 await setAxis('axis-y', 'se_peak_dba');
 await setAxis('axis-x', 'weight_oz');
 
-// 10. Nothing overflows the viewport horizontally.
+// 10. The four derived analyses are present and behave.
+await setAxis('axis-y', 'se_reduction_dba');
+check(
+  'net reduction is a maximise measure',
+  (await hint()).includes('a higher'),
+  (await hint()).slice(-72),
+);
+await setAxis('axis-y', 'se_first_round_pop');
+check('first-round pop is offered and minimises', (await hint()).includes('a lower'));
+await setAxis('axis-y', 'se_peak_dba');
+
+// Uncertainty reaches the tooltip.
+await evaluate(`(() => {
+  const c = document.getElementById('scatter');
+  c.scrollIntoView({ block: 'center' });
+})()`);
+const withError = await evaluate(`(() => {
+  const rows = document.querySelectorAll('#table-body tr');
+  rows[0].click();
+  return true;
+})()`);
+await new Promise((r) => setTimeout(r, 1200));
+check(
+  'a spectrum is drawn for the selected run',
+  await evaluate("document.getElementById('spectrum-wrap').hidden === false"),
+);
+check(
+  'the spectrum names its mics',
+  (await evaluate("document.querySelectorAll('#spectrum-legend .item').length")) > 0,
+);
+// Raw third-octave levels climb ~1 dB per band from bandwidth alone, so the
+// plotted curve must be per-Hz or it slopes up regardless of the sound.
+const density = await evaluate(`(async () => {
+  const bands = await (await fetch('data/bands.json')).json();
+  const levels = Object.values(Object.values(bands.runs)[0])[0];
+  const w = 2 ** (1 / 6) - 2 ** (-1 / 6);
+  const at = (i) => levels[i] - 10 * Math.log10(bands.centres[i] * w);
+  const raw = levels.at(-1) - levels[0];
+  return { raw, perHz: at(levels.length - 1) - at(0) };
+})()`);
+// Raw levels climb because bands widen; per-Hz must not inherit that slope.
+check(
+  'the spectrum is plotted per Hz, not as raw band levels',
+  density.perHz < density.raw - 20,
+  `raw ${density.raw.toFixed(0)} dB top-to-bottom, per Hz ${density.perHz.toFixed(0)} dB`,
+);
+check(
+  'the caption explains the per-Hz conversion',
+  (await evaluate("document.getElementById('spectrum-wrap').textContent")).replace(/\s+/g, ' ').includes('per Hz'),
+);
+
+// Error bars: the standard error of a five-shot mean is the whole point of the
+// uncertainty pass, so a sparse plot has to actually draw them. The full 1,176
+// runs are deliberately over the threshold, so narrow to one host first.
+const sparse = await evaluate(`(() => {
+  const tick = (facet, value) => {
+    const box = [...document.querySelectorAll(facet + ' input')].find((i) => i.value === value);
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+  };
+  tick('#facet-cartridge', '5.56-16AR');
+  tick('#facet-year', '2024');
+  return Number(document.querySelector('.tile .value').textContent.replace(/,/g, ''));
+})()`);
+await new Promise((r) => setTimeout(r, 400));
+check('narrowed below the error-bar threshold', sparse <= 220, `${sparse} runs`);
+
+const setY = async (key) => {
+  await evaluate(`(() => {
+    const y = document.getElementById('axis-y');
+    y.value = ${JSON.stringify(key)};
+    y.dispatchEvent(new Event('change'));
+  })()`);
+  await new Promise((r) => setTimeout(r, 400));
+  return evaluate("document.getElementById('bar-legend').hidden === false");
+};
+check('a sparse plot draws error bars', await setY('se_peak_dba'));
+// Net reduction is derived from two shot-averaged means, so it has no spread of
+// its own; claiming a standard error there would be inventing one.
+check('a measure without a standard error draws none', !(await setY('se_reduction_dba')));
+
+// 11. Nothing overflows the viewport horizontally.
 const overflow = await evaluate(
   'document.documentElement.scrollWidth - document.documentElement.clientWidth',
 );
 check('no horizontal overflow', overflow <= 0, `${overflow}px`);
 
-// 11. Touch targets are big enough to hit.
+// 12. Touch targets are big enough to hit.
 const small = await evaluate(`(() => {
   const bad = [];
   for (const el of document.querySelectorAll('button, select, input, summary')) {

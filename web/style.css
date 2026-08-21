@@ -264,6 +264,14 @@ canvas { display: block; width: 100%; touch-action: none; }
   border: 2px solid var(--series-1);
 }
 .swatch.ring.muted { border-color: var(--dot-strong); }
+/* Matches the error bar: a bare vertical rule, not a filled chip. */
+.swatch.tick {
+  width: 0;
+  height: 12px;
+  border-radius: 0;
+  border-left: 1px solid var(--dot-strong);
+}
+.legend .item[hidden] { display: none; }
 
 .muted-note { text-transform: none; letter-spacing: 0; color: var(--text-muted); }
 .link-button {

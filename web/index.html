@@ -130,6 +130,7 @@
         <span class="item"><span class="swatch ring"></span>on frontier</span>
         <span class="item"><span class="swatch ring muted"></span>other runs</span>
         <span class="item"><span class="swatch" style="background:var(--series-2)"></span>selected</span>
+        <span class="item" id="bar-legend" hidden><span class="swatch tick"></span>&plusmn;1 standard error of the five-shot mean</span>
         <button id="reset-view" class="link-button" type="button" hidden>reset view</button>
       </div>
     </section>
@@ -150,6 +151,17 @@
         </p>
         <div class="plot-wrap"><canvas id="impulse" height="150"></canvas></div>
         <div class="plot-wrap"><canvas id="leq" height="150"></canvas></div>
+      </div>
+      <div id="spectrum-wrap" hidden>
+        <p class="hint" style="margin-top:14px">
+          One-third-octave energy, divided by each band's width. Bands widen with
+          frequency, so plotting them raw slopes up about 1&nbsp;dB per band no
+          matter what the sound is; per&nbsp;Hz is the honest shape. A-weighting
+          discounts everything below about 250&nbsp;Hz, so two cans can share a
+          dBA figure and not sound alike.
+        </p>
+        <div class="plot-wrap"><canvas id="spectrum" height="170"></canvas></div>
+        <div class="legend" id="spectrum-legend"></div>
       </div>
     </section>
   </div>

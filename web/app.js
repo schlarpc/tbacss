@@ -59,6 +59,20 @@ const MEASURES = [
   ['length_in', 'length, in', MINIMISE],
   ['max_diameter_in', 'max diameter, in', MINIMISE],
   ['vol_cuin', 'volume, cu in', MINIMISE],
+  // Spectral shape. Low-frequency energy is the thump a dBA figure hides, and
+  // less of it is better. The centroid is a character descriptor, not a score,
+  // so it carries no direction.
+  ['se_low_freq_db', "shooter's ear, energy below 250 Hz, dB", MINIMISE],
+  ['ml_low_freq_db', 'mil left, energy below 250 Hz, dB', MINIMISE],
+  ['se_centroid_hz', "shooter's ear, spectral centroid, Hz", null],
+  // How much quieter than the bare muzzle. The one measure here where more
+  // is better, and the number most readers actually want.
+  ['se_reduction_dba', "shooter's ear, reduction dBA", MAXIMISE],
+  ['ml_reduction_db', 'mil left, reduction dB', MAXIMISE],
+  // Shot one minus the rest. Less is better: the first round is the one that
+  // matters, and a can that pops is a can that is inconsistent.
+  ['se_first_round_pop', "shooter's ear, first-round pop dBA", MINIMISE],
+  ['ml_first_round_pop', 'mil left, first-round pop dBA', MINIMISE],
   // Host attributes. Both are conditions the test was run under rather than
   // properties of the suppressor, so neither is an objective -- you control
   // for a barrel length, you do not minimise it.
@@ -110,6 +124,26 @@ const state = {
 
 const css = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
 
+/** Standard error of a published mean, if the per-shot figures give one. */
+function semOf(key, index) {
+  const column = state.bundle.catalog.columns[`${key}_sem`];
+  if (!column) return null;
+  const value = column[index];
+  return Number.isNaN(value) ? null : value;
+}
+
+/**
+ * Whether two means are closer together than the measurement can resolve.
+ *
+ * Two-sample, so the errors add in quadrature; 2 sigma is deliberately
+ * conservative because the failure this prevents is reading a 0.2 dB gap as a
+ * ranking.
+ */
+function indistinguishable(aMean, aSem, bMean, bSem, sigma = 2) {
+  if (aSem === null || bSem === null) return false;
+  return Math.abs(aMean - bMean) < sigma * Math.hypot(aSem, bSem);
+}
+
 function fmt(value, digits = 2) {
   return value === null || Number.isNaN(value) ? '—' : value.toFixed(digits);
 }
@@ -156,6 +190,7 @@ const isNarrow = () => window.matchMedia(NARROW).matches;
 /** Plot heights shrink on a phone so a chart still fits a screen. */
 const PLOT_HEIGHTS = {
   scatter: [420, 300],
+  spectrum: [170, 140],
   wave: [300, 210],
   impulse: [150, 120],
   leq: [150, 120],
@@ -567,6 +602,36 @@ function renderScatter2D(ctx, width, height, usable, [xKey, yKey]) {
     axisDigits(xKey), axisDigits(yKey),
   );
 
+  // Error bars first, so marks sit on top of them. Only drawn when the plot
+  // is sparse enough to read -- at 1000 points they are a grey fog.
+  // Sparse is necessary but not sufficient: derived measures like net reduction
+  // and spectral centroid carry no per-shot spread, so nothing gets drawn and
+  // the legend must not claim otherwise.
+  let bars = false;
+  if (usable.length <= 220) {
+    ctx.strokeStyle = css('--dot');
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const i of usable) {
+      const x = px(xs[i]);
+      const ySem = semOf(yKey, i);
+      if (ySem) {
+        ctx.moveTo(x, py(ys[i] - ySem));
+        ctx.lineTo(x, py(ys[i] + ySem));
+        bars = true;
+      }
+      const xSem = semOf(xKey, i);
+      if (xSem) {
+        const y = py(ys[i]);
+        ctx.moveTo(px(xs[i] - xSem), y);
+        ctx.lineTo(px(xs[i] + xSem), y);
+        bars = true;
+      }
+    }
+    ctx.stroke();
+  }
+  $('bar-legend').hidden = !bars;
+
   for (const i of usable) {
     const x = px(xs[i]);
     const y = py(ys[i]);
@@ -576,9 +641,14 @@ function renderScatter2D(ctx, width, height, usable, [xKey, yKey]) {
       selected: state.selectedRun === i,
     });
   }
+  state.showingBars = bars;
 }
 
 function renderScatter3D(ctx, width, height, usable, keys) {
+  // A bar along one of three projected axes reads as a stray line segment, so
+  // the 3D view has none -- and must not keep the 2D view's legend entry.
+  state.showingBars = false;
+  $('bar-legend').hidden = true;
   const { catalog } = state.bundle;
   const cols = keys.map((k) => catalog.columns[k]);
   const domains = cols.map((c) => extent(c, usable));
@@ -704,7 +774,33 @@ function showTooltip(tip, canvas, point) {
     const value = document.createElement('strong');
     value.textContent = fmt(catalog.columns[key][i]);
     line.append(value);
+    const sem = semOf(key, i);
+    if (sem !== null) {
+      const error = document.createElement('span');
+      error.className = 'dim';
+      error.textContent = ` ± ${sem.toFixed(2)}`;
+      line.append(error);
+    }
     tip.append(line);
+  }
+
+  // The point of the error bars: say how many other runs on screen this one
+  // cannot actually be separated from.
+  const ySem = semOf(yKey, i);
+  if (ySem !== null) {
+    const column = catalog.columns[yKey];
+    let ties = 0;
+    for (const j of state.visible) {
+      if (j !== i && indistinguishable(column[i], ySem, column[j], semOf(yKey, j))) {
+        ties++;
+      }
+    }
+    const note = document.createElement('div');
+    note.className = 'dim';
+    note.textContent = ties
+      ? `${ties} shown run${ties === 1 ? '' : 's'} not distinguishable from this`
+      : 'separable from every run shown';
+    tip.append(note);
   }
   const caveat = caveatFor(i);
   if (caveat) {
@@ -894,6 +990,107 @@ function renderTable() {
 
 /* ---------------------------------------------------------------- waveforms */
 
+/**
+ * Spectra live in their own file and are only fetched when something needs to
+ * draw one, so they cost nothing on first load.
+ */
+async function loadBands(bundle) {
+  if (bundle.bands !== undefined) return bundle.bands;
+  try {
+    const version = bundle.version ?? '';
+    bundle.bands = await (await fetch(`${bundle.baseUrl}/bands.json${version}`)).json();
+  } catch {
+    bundle.bands = null; // published without a band pass
+  }
+  return bundle.bands;
+}
+
+async function renderSpectrum(runId) {
+  const wrap = $('spectrum-wrap');
+  const bands = await loadBands(state.bundle);
+  const spectra = bands?.runs?.[String(runId)];
+  if (!spectra) {
+    wrap.hidden = true;
+    return;
+  }
+  wrap.hidden = false;
+
+  const { ctx, width, height } = prepare($('spectrum'));
+  const centres = bands.centres;
+  const mics = Object.keys(spectra).sort();
+
+  // Proportional-bandwidth bands get wider as they climb -- the 20 kHz band is
+  // 500x the width of the 40 Hz one -- so a plot of raw band levels rises about
+  // 1 dB per band on a spectrally flat signal and reads as "it's all treble"
+  // regardless of content. Dividing out the width gives energy per Hz, which is
+  // the shape a reader thinks they are looking at. The stored levels are
+  // untouched: low_frequency_db and the like are energy sums and want widths in.
+  const WIDTH_RATIO = 2 ** (1 / 6) - 2 ** (-1 / 6);
+  const perHz = (value, index) =>
+    value === null ? null : value - 10 * Math.log10(centres[index] * WIDTH_RATIO);
+  const density = new Map(mics.map((mic) => [mic, spectra[mic].map(perHz)]));
+
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const mic of mics) {
+    for (const value of density.get(mic)) {
+      if (value === null) continue;
+      if (value < lo) lo = value;
+      if (value > hi) hi = value;
+    }
+  }
+  if (!(hi > lo)) { wrap.hidden = true; return; }
+
+  const box = { left: 46, top: 16, right: width - 12, bottom: height - 32 };
+  // Log frequency: a third-octave scale is geometric, so equal spacing here
+  // means equal spacing on screen.
+  const logs = centres.map(Math.log10);
+  const { py } = axes(
+    ctx, box, [logs[0], logs.at(-1)], [lo - 4, hi + 4],
+    'frequency, Hz', 'energy density, dB per Hz', 0, 0,
+  );
+  // Redraw x labels as frequencies rather than logarithms.
+  ctx.fillStyle = css('--surface-1');
+  ctx.fillRect(box.left - 30, box.bottom + 2, width, 16);
+  ctx.fillStyle = css('--text-muted');
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const px = (l) =>
+    box.left + ((l - logs[0]) / (logs.at(-1) - logs[0])) * (box.right - box.left);
+  for (const f of [31.5, 125, 500, 2000, 8000]) {
+    ctx.fillText(f >= 1000 ? `${f / 1000}k` : String(f), px(Math.log10(f)), box.bottom + 6);
+  }
+
+  for (const mic of mics) {
+    ctx.beginPath();
+    ctx.strokeStyle = css(MIC_COLOR[mic] ?? '--series-1');
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    let started = false;
+    density.get(mic).forEach((value, index) => {
+      if (value === null) return;
+      const x = px(logs[index]);
+      const y = py(value);
+      if (started) ctx.lineTo(x, y);
+      else { ctx.moveTo(x, y); started = true; }
+    });
+    ctx.stroke();
+  }
+
+  const legend = $('spectrum-legend');
+  legend.textContent = '';
+  for (const mic of mics) {
+    const item = document.createElement('span');
+    item.className = 'item';
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.background = `var(${MIC_COLOR[mic] ?? '--series-1'})`;
+    item.append(swatch, document.createTextNode(mic));
+    legend.append(item);
+  }
+}
+
 /** A quiet centred message on an otherwise empty plot. */
 function drawPlaceholder(canvas, message) {
   const { ctx, width, height } = prepare(canvas);
@@ -920,6 +1117,8 @@ async function selectRun(index, { updateHash = true } = {}) {
   $('wave-title').textContent = runLabel(index);
   $('derived').hidden = true;
   $('shots').innerHTML = '';
+
+  renderSpectrum(runId).catch((error) => console.error(error));
 
   if (!catalog.columns.waveform_count[index]) {
     state.envelopes = null;

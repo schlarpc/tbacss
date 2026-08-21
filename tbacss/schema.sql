@@ -119,6 +119,17 @@ CREATE TABLE IF NOT EXISTS shot_metric (
     peak_leq10ms_dba REAL
 ) WITHOUT ROWID;
 
+-- One-third-octave band levels per waveform, from `python -m tbacss bands`.
+-- TBAC publishes peak and A-weighted peak, which say how loud a shot is but
+-- not what it sounds like; A-weighting discounts exactly the low frequencies
+-- that make a suppressed shot feel heavy. Stored as a float32 array rather
+-- than 30 rows per waveform, which would be 400k rows to say the same thing.
+CREATE TABLE IF NOT EXISTS band_level (
+    waveform_id INTEGER PRIMARY KEY REFERENCES waveform(id) ON DELETE CASCADE,
+    n_bands     INTEGER NOT NULL,
+    levels      BLOB    NOT NULL   -- little-endian float32, dB re 20 uPa
+) WITHOUT ROWID;
+
 -- Runs joined to their published numbers, one row per run per mic.
 CREATE VIEW IF NOT EXISTS v_measurement AS
 SELECT d.year,

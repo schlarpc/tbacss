@@ -40,6 +40,8 @@ import numpy as np
 
 from . import blobs, wavecodec
 from .caveats import CAVEATS, as_dicts, caveats_for
+from .analysis import BAND_CENTRES
+from .derive import band_statistics, net_reduction, run_statistics
 from .hosts import HOSTS, Host
 from .analysis import TIME_START_S, TIME_STOP_S, TIME_STOP_SHORT_S, is_short_window
 
@@ -79,6 +81,23 @@ _NUMERIC_COLUMNS = (
     "p225_peak_dba",
     "waveform_count",
 )
+#: Shipped column -> the (mic, per-shot metric) it summarises. Used to attach
+#: a standard error to every published mean.
+_MIC_METRIC = {
+    "se_peak_db": ("SE", "peak_db"),
+    "se_peak_dba": ("SE", "peak_dba"),
+    "se_impulse_db_ms": ("SE", "impulse_db_ms"),
+    "se_peak_leq10ms_dba": ("SE", "peak_leq10ms_dba"),
+    "ml_peak_db": ("ML", "peak_db"),
+    "ml_peak_dba": ("ML", "peak_dba"),
+    "ml_impulse_db_ms": ("ML", "impulse_db_ms"),
+    "ml_peak_leq10ms_dba": ("ML", "peak_leq10ms_dba"),
+    "mr_peak_db": ("MR", "peak_db"),
+    "mr_peak_dba": ("MR", "peak_dba"),
+    "p225_peak_db": ("225", "peak_db"),
+    "p225_peak_dba": ("225", "peak_dba"),
+}
+
 _SHOT_NUMERIC_COLUMNS = (
     "peak_db",
     "peak_dba",
@@ -105,7 +124,10 @@ class PublishReport:
         for name, size in self.files.items():
             lines.append(f"{name:22}{size:14,}{size / 1e6:9.2f}")
         total = sum(self.files.values())
-        eager = sum(v for k, v in self.files.items() if k.endswith(".json"))
+        eager = sum(
+            v for k, v in self.files.items()
+            if k.endswith(".json") and k != "bands.json"
+        )
         lines += [
             f"{'TOTAL':22}{total:14,}{total / 1e6:9.2f}",
             "",
@@ -277,6 +299,66 @@ def publish(
         catalog["dictionaries"]["host_ammo"] = supersonic_dict
         catalog["columns"]["host_ammo"] = supersonic
 
+        # Uncertainty, first-round pop and net reduction: everything the
+        # published tables leave out. See tbacss.derive for why each matters.
+        ids = [r["test_run_id"] for r in runs]
+        stats = {
+            metric: run_statistics(db, metric)
+            for metric in {m for _, m in _MIC_METRIC.values()}
+        }
+        for column, (mic, metric) in _MIC_METRIC.items():
+            if column not in catalog["columns"]:
+                continue
+            table = stats[metric]
+            catalog["columns"][f"{column}_sem"] = _finite(
+                [
+                    (table.get((run_id, mic)).sem if table.get((run_id, mic)) else None)
+                    for run_id in ids
+                ]
+            )
+
+        pop = stats["peak_dba"]
+        for column, mic in (("se_first_round_pop", "SE"), ("ml_first_round_pop", "ML")):
+            catalog["columns"][column] = _finite(
+                [
+                    (
+                        pop.get((run_id, mic)).first_round_pop
+                        if pop.get((run_id, mic))
+                        else None
+                    )
+                    for run_id in ids
+                ]
+            )
+
+        for column, mic, metric in (
+            ("se_reduction_dba", "SE", "peak_dba"),
+            ("ml_reduction_dba", "ML", "peak_dba"),
+            ("se_reduction_db", "SE", "peak_db"),
+            ("ml_reduction_db", "ML", "peak_db"),
+        ):
+            reduction = net_reduction(db, metric)
+            catalog["columns"][column] = _finite(
+                [reduction.get((run_id, mic)) for run_id in ids]
+            )
+
+        # One-third-octave spectra. Two scalars go in the catalog so they can
+        # be filtered and plotted; the full curves ship separately and are
+        # fetched only when something needs to draw one.
+        bands = band_statistics(db, BAND_CENTRES) if _has_bands(db) else {}
+        if bands:
+            for column, mic, field in (
+                ("se_low_freq_db", "SE", "low_frequency_db"),
+                ("ml_low_freq_db", "ML", "low_frequency_db"),
+                ("se_centroid_hz", "SE", "centroid_hz"),
+            ):
+                catalog["columns"][column] = _finite(
+                    [
+                        (bands.get((run_id, mic)) or {}).get(field)
+                        for run_id in ids
+                    ]
+                )
+            catalog["band_centres"] = [round(f, 1) for f in BAND_CENTRES]
+
         # Advisories TBAC published in prose. Without these a reader ranks
         # suppressors on numbers TBAC says to disregard.
         catalog["caveats"] = as_dicts()
@@ -330,6 +412,7 @@ def publish(
             waveform_index = json.loads(index_path.read_text())
             report.waveforms = waveform_index["n"]
             _write_json(out, catalog, shot_table, waveform_index)
+            _write_bands(out, bands, run_ids=ids)
             return _measure(out, report, waveform_index["n"] * buckets * 4,
                             sum(waveform_index["columns"]["raw_len"]))
 
@@ -419,11 +502,40 @@ def publish(
         }
 
     _write_json(out, catalog, shot_table, waveform_index)
+    _write_bands(out, bands, run_ids=ids)
     return _measure(
         out,
         report,
         len(entries) * buckets * 4,
         sum(entry["raw_len"] for entry in entries),
+    )
+
+
+def _has_bands(db) -> bool:
+    return bool(
+        db.query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='band_level'"
+        )
+        and db.query("SELECT 1 FROM band_level LIMIT 1")
+    )
+
+
+def _write_bands(out: Path, bands: dict, run_ids: list[int]) -> None:
+    """Spectra, in their own file because nothing needs them on first load.
+
+    Rounded to a tenth of a dB: these are 30-point curves for a chart, and
+    full float precision would triple the file for no visible difference.
+    """
+    if not bands:
+        return
+    payload: dict[str, dict[str, list]] = {}
+    for (run_id, mic), entry in bands.items():
+        payload.setdefault(str(run_id), {})[mic] = [
+            None if v != v else round(float(v), 1) for v in entry["levels"]
+        ]
+    (out / "bands.json").write_text(
+        json.dumps({"centres": [round(f, 1) for f in BAND_CENTRES], "runs": payload},
+                   separators=(",", ":"))
     )
 
 
@@ -460,10 +572,13 @@ def _measure(out: Path, report, expected_env: int, expected_raw: int):
         "catalog.json",
         "shots.json",
         "waveforms.json",
+        "bands.json",
         "envelopes.bin",
         "samples.bin",
     ):
-        report.files[name] = (out / name).stat().st_size
+        path = out / name
+        if path.exists():
+            report.files[name] = path.stat().st_size
 
     for name, expected in (
         ("envelopes.bin", expected_env),

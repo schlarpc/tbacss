@@ -27,6 +27,7 @@ from scipy.integrate import cumulative_trapezoid
 from scipy.signal import bilinear, lfilter
 
 __all__ = [
+    "BAND_CENTRES",
     "ShotMetrics",
     "RunMetrics",
     "a_weighting",
@@ -205,6 +206,50 @@ def shot_metrics(
         impulse_pa_ms=impulse,
         peak_leq_pa=peak_leq,
     )
+
+
+#: One-third-octave band centres, IEC 61260 preferred numbers, 25 Hz to 20 kHz.
+#: The top band is under half the 262 kHz sample rate by a wide margin, so
+#: nothing here is fighting the anti-alias filter.
+BAND_CENTRES: tuple[float, ...] = tuple(
+    1000.0 * 10 ** (n / 10) for n in range(-16, 14)
+)
+
+
+def third_octave_levels(
+    window: np.ndarray,
+    sample_rate: float = FS,
+    centres: tuple[float, ...] = BAND_CENTRES,
+) -> np.ndarray:
+    """Energy in each third-octave band, dB re 20 uPa.
+
+    TBAC publishes peak and A-weighted peak, which say how loud a shot is but
+    not what it sounds like. Two cans can land on the same dBA with quite
+    different spectra -- one crisp, one a low thump -- and A-weighting
+    deliberately discounts exactly the low frequencies that make a suppressed
+    shot feel heavy. The waveforms are stored, so the bands are recoverable.
+
+    This is a plain energy sum over an FFT of the whole analysis window, so it
+    is the total energy of the event per band, not a running level.
+    """
+    samples = np.asarray(window, dtype=np.float64)
+    spectrum = np.fft.rfft(samples)
+    freqs = np.fft.rfftfreq(samples.size, d=1.0 / sample_rate)
+
+    # Parseval: scale so the sum over bins is the mean square of the signal.
+    power = (np.abs(spectrum) ** 2) * 2.0 / samples.size**2
+    if power.size:
+        power[0] /= 2.0  # DC is not mirrored
+        if samples.size % 2 == 0:
+            power[-1] /= 2.0  # nor is Nyquist
+
+    out = np.empty(len(centres), dtype=np.float64)
+    ratio = 2 ** (1 / 6)  # half a third-octave, each way
+    for index, centre in enumerate(centres):
+        lo, hi = centre / ratio, centre * ratio
+        total = power[(freqs >= lo) & (freqs < hi)].sum()
+        out[index] = 10.0 * np.log10(total / P_0**2) if total > 0 else np.nan
+    return out
 
 
 def average_metrics(shots: list[ShotMetrics]) -> RunMetrics:
