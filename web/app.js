@@ -94,6 +94,7 @@ const state = {
   selectedWaveform: null,
   envelopes: null,
   sort: { column: 'se_peak_dba', direction: 1 },
+  frontierFirst: true,
   hover: null,
   filtersOpen: false,
   zKey: null,
@@ -769,24 +770,40 @@ function renderTable() {
   const key = state.sort.column;
   const column = catalog.columns[key];
   const dictionary = catalog.dictionaries[key];
-  const order = [...state.visible].sort((a, b) => {
+
+  /** The chosen column, ignoring the frontier grouping. */
+  const byColumn = (a, b) => {
     let left = column[a];
     let right = column[b];
     if (dictionary) {
-      left = dictionary[left] ?? '';
-      right = dictionary[right] ?? '';
+      left = key === 'cartridge' ? hostLabel(dictionary[left] ?? '') : dictionary[left] ?? '';
+      right = key === 'cartridge' ? hostLabel(dictionary[right] ?? '') : dictionary[right] ?? '';
       return state.sort.direction * String(left).localeCompare(String(right));
     }
+    // A missing value sorts last either way; it is not a small number.
     if (Number.isNaN(left)) return 1;
     if (Number.isNaN(right)) return -1;
     return state.sort.direction * (left - right);
+  };
+
+  const order = [...state.visible].sort((a, b) => {
+    if (state.frontierFirst) {
+      const rank = Number(state.frontier.has(b)) - Number(state.frontier.has(a));
+      if (rank) return rank;
+    }
+    return byColumn(a, b);
   });
 
   const shown = order.slice(0, MAX_TABLE_ROWS);
+  const grouped =
+    state.frontierFirst && state.frontier.size
+      ? `Frontier runs first (${state.frontier.size}), then ${MEASURE_LABEL.get(key) ?? key}. `
+      : '';
   $('table-hint').textContent =
-    shown.length < order.length
-      ? `The table view: every value on the chart, readable without colour. Showing the first ${shown.length} of ${order.length} matching runs — narrow the filters to see the rest.`
-      : 'The table view: every value on the chart, readable without colour.';
+    `The table view: every value on the chart, readable without colour. ${grouped}` +
+    (shown.length < order.length
+      ? `Showing the first ${shown.length} of ${order.length} matching runs — narrow the filters to see the rest.`
+      : '');
 
   const body = $('table-body');
   body.textContent = '';
@@ -1177,16 +1194,22 @@ async function main() {
   const years = [...new Set([...catalog.columns.year])].sort();
   buildFacet('facet-year', years, null);
 
-  // Calibers and hosts are easiest to scan by how much data sits behind them;
-  // makers are a long list somebody looks a name up in, so those go A-Z.
+  // Calibers are a short list where volume is the useful ordering. Makers and
+  // hosts are long lists somebody looks a specific name up in, so those go
+  // A-Z -- and hosts sort by the name actually displayed, since sorting by the
+  // raw code would leave the rendered list looking unsorted.
   for (const [id, column, order] of [
     ['facet-caliber', 'caliber', 'count'],
-    ['facet-cartridge', 'cartridge', 'count'],
+    ['facet-cartridge', 'cartridge', 'name'],
     ['facet-manufacturer', 'manufacturer', 'name'],
   ]) {
     const counts = countsFor(column);
+    const describe = column === 'cartridge' ? hostLabel : String;
     const collate = (a, b) =>
-      String(a).localeCompare(String(b), undefined, { sensitivity: 'base' });
+      describe(a).localeCompare(describe(b), undefined, {
+        sensitivity: 'base',
+        numeric: true,
+      });
     const values = [...counts.keys()].sort((a, b) =>
       order === 'name' ? collate(a, b) : counts.get(b) - counts.get(a) || collate(a, b),
     );
@@ -1196,6 +1219,11 @@ async function main() {
   fillAxisMenus();
   bindRotation();
   bindScatter();
+
+  $('frontier-first').addEventListener('change', (event) => {
+    state.frontierFirst = event.target.checked;
+    renderTable();
+  });
 
   for (const id of ['q', 'min-weight', 'max-weight', 'min-length', 'max-length', 'baselines']) {
     $(id).addEventListener('input', refilter);

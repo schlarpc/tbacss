@@ -233,13 +233,53 @@ check(
   !(await evaluate("document.getElementById('scatter').classList.contains('rotatable')")),
 );
 
-// 8. Nothing overflows the viewport horizontally.
+// 8. The table groups frontier runs first, and the toggle turns it off.
+const frontierRanks = async () =>
+  evaluate(`[...document.querySelectorAll('#table-body tr')]
+    .map((tr) => tr.classList.contains('frontier') ? 1 : 0)`);
+let ranks = await frontierRanks();
+const firstPlain = ranks.indexOf(0);
+check(
+  'frontier runs are listed first',
+  firstPlain === -1 || !ranks.slice(firstPlain).includes(1),
+  `${ranks.filter(Boolean).length} frontier rows, first plain row at ${firstPlain}`,
+);
+
+// Turning the grouping off must change the order. Checking "row 0 is no
+// longer a frontier run" would be wrong: sorted by SE dBA the quietest run is
+// legitimately on the frontier either way.
+const rowOrder = () =>
+  evaluate(`[...document.querySelectorAll('#table-body tr')]
+    .slice(0, 12).map((tr) => tr.cells[2].textContent).join('|')`);
+const groupedOrder = await rowOrder();
+await tap('#frontier-first');
+const plainOrder = await rowOrder();
+check('the toggle turns the grouping off', groupedOrder !== plainOrder);
+await tap('#frontier-first');
+check(
+  'turning it back on restores the grouping',
+  (await rowOrder()) === groupedOrder,
+);
+
+// Hosts are listed by the name shown, not the raw code.
+const hostNames = await evaluate(`[...document.querySelectorAll('#facet-cartridge label')]
+  .map((l) => l.textContent.replace(/ \\(\\d+\\)$/, ''))`);
+const sortedHosts = [...hostNames].sort((a, b) =>
+  a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }),
+);
+check(
+  'hosts sort by their displayed name',
+  JSON.stringify(hostNames) === JSON.stringify(sortedHosts),
+  hostNames.slice(0, 3).join(' | '),
+);
+
+// 9. Nothing overflows the viewport horizontally.
 const overflow = await evaluate(
   'document.documentElement.scrollWidth - document.documentElement.clientWidth',
 );
 check('no horizontal overflow', overflow <= 0, `${overflow}px`);
 
-// 9. Touch targets are big enough to hit.
+// 10. Touch targets are big enough to hit.
 const small = await evaluate(`(() => {
   const bad = [];
   for (const el of document.querySelectorAll('button, select, input, summary')) {

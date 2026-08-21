@@ -203,6 +203,12 @@ node scripts/ui_smoke.mjs                                   # 390x844, touch
 node scripts/ui_smoke.mjs http://127.0.0.1:8765/index.html 1400 900
 ```
 
+The runs table lists frontier runs first by default, then the sorted column;
+the grouping is a toggle in the card header. Facets are ordered by what you do
+with them — calibers by volume, makers and hosts A-Z, since those are lists you
+look a specific name up in. Hosts sort by the name shown rather than the raw
+code, or the rendered list would look unsorted.
+
 `web/tbacss.js` is the dependency-free reader underneath it: `loadBundle`,
 `selection`, `paretoFront`, `fetchRunEnvelopes`, `fetchSamples`, `decodeFrame`,
 and the derived `impulse` / `leq` / `metrics`. To confirm the browser maths
