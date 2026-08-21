@@ -43,45 +43,86 @@ const MAXIMISE = 'max';
 /** Starting yaw/pitch for the 3D view, in radians. */
 const DEFAULT_VIEW_INIT = { yaw: -0.62, pitch: 0.42 };
 
+/**
+ * `[key, label, better, group]`.
+ *
+ * `label` is the full name and is what axis titles, hints and the readout use,
+ * where the measure appears on its own and has to say where it was measured.
+ * `group` sorts the axis menus: two dozen measures in one flat list is a wall
+ * of near-identical strings, and four of every five characters in it are a mic
+ * name repeated. The menu prints the group once as a heading and strips it off
+ * the options underneath, so what remains is the part that differs.
+ */
 const MEASURES = [
-  ['se_peak_dba', "shooter's ear, peak dBA", MINIMISE],
-  ['se_peak_db', "shooter's ear, peak dB", MINIMISE],
-  ['se_peak_leq10ms_dba', "shooter's ear, Leq(10ms) dBA", MINIMISE],
-  ['se_impulse_db_ms', "shooter's ear, impulse dB·ms", MINIMISE],
-  ['ml_peak_db', 'mil left, peak dB', MINIMISE],
-  ['ml_peak_dba', 'mil left, peak dBA', MINIMISE],
-  ['ml_peak_leq10ms_dba', 'mil left, Leq(10ms) dBA', MINIMISE],
-  ['mr_peak_db', 'mil right, peak dB', MINIMISE],
-  ['mr_peak_dba', 'mil right, peak dBA', MINIMISE],
-  ['p225_peak_db', '225°, peak dB', MINIMISE],
-  ['p225_peak_dba', '225°, peak dBA', MINIMISE],
-  ['weight_oz', 'weight, oz', MINIMISE],
-  ['length_in', 'length, in', MINIMISE],
-  ['max_diameter_in', 'max diameter, in', MINIMISE],
-  ['vol_cuin', 'volume, cu in', MINIMISE],
+  ['se_peak_dba', "shooter's ear, peak dBA", MINIMISE, "Shooter's ear"],
+  ['se_peak_db', "shooter's ear, peak dB", MINIMISE, "Shooter's ear"],
+  ['se_peak_leq10ms_dba', "shooter's ear, Leq(10ms) dBA", MINIMISE, "Shooter's ear"],
+  ['se_impulse_db_ms', "shooter's ear, impulse dB·ms", MINIMISE, "Shooter's ear"],
+  // How much quieter than the bare muzzle. The one measure here where more
+  // is better, and the number most readers actually want.
+  ['se_reduction_dba', "shooter's ear, reduction dBA", MAXIMISE, "Shooter's ear"],
+  // Shot one minus the rest. Less is better: the first round is the one that
+  // matters, and a can that pops is a can that is inconsistent.
+  ['se_first_round_pop', "shooter's ear, first-round pop dBA", MINIMISE, "Shooter's ear"],
   // Spectral shape. Low-frequency energy is the thump a dBA figure hides, and
   // less of it is better. The centroid is a character descriptor, not a score,
   // so it carries no direction.
-  ['se_low_freq_db', "shooter's ear, energy below 250 Hz, dB", MINIMISE],
-  ['ml_low_freq_db', 'mil left, energy below 250 Hz, dB', MINIMISE],
-  ['se_centroid_hz', "shooter's ear, spectral centroid, Hz", null],
-  // How much quieter than the bare muzzle. The one measure here where more
-  // is better, and the number most readers actually want.
-  ['se_reduction_dba', "shooter's ear, reduction dBA", MAXIMISE],
-  ['ml_reduction_db', 'mil left, reduction dB', MAXIMISE],
-  // Shot one minus the rest. Less is better: the first round is the one that
-  // matters, and a can that pops is a can that is inconsistent.
-  ['se_first_round_pop', "shooter's ear, first-round pop dBA", MINIMISE],
-  ['ml_first_round_pop', 'mil left, first-round pop dBA', MINIMISE],
-  // Host attributes. Both are conditions the test was run under rather than
-  // properties of the suppressor, so neither is an objective -- you control
-  // for a barrel length, you do not minimise it.
-  ['host_barrel_in', 'host barrel, in', null],
-  ['host_grains', 'bullet, grains', null],
-  ['year', 'year', null],
+  ['se_low_freq_db', "shooter's ear, energy below 250 Hz, dB", MINIMISE, "Shooter's ear"],
+  ['se_centroid_hz', "shooter's ear, spectral centroid, Hz", null, "Shooter's ear"],
+
+  ['ml_peak_dba', 'mil left, peak dBA', MINIMISE, 'Mil left'],
+  ['ml_peak_db', 'mil left, peak dB', MINIMISE, 'Mil left'],
+  ['ml_peak_leq10ms_dba', 'mil left, Leq(10ms) dBA', MINIMISE, 'Mil left'],
+  ['ml_reduction_db', 'mil left, reduction dB', MAXIMISE, 'Mil left'],
+  ['ml_first_round_pop', 'mil left, first-round pop dBA', MINIMISE, 'Mil left'],
+  ['ml_low_freq_db', 'mil left, energy below 250 Hz, dB', MINIMISE, 'Mil left'],
+
+  ['mr_peak_dba', 'mil right, peak dBA', MINIMISE, 'Mil right'],
+  ['mr_peak_db', 'mil right, peak dB', MINIMISE, 'Mil right'],
+
+  ['p225_peak_dba', '225°, peak dBA', MINIMISE, '225°'],
+  ['p225_peak_db', '225°, peak dB', MINIMISE, '225°'],
+
+  ['weight_oz', 'weight, oz', MINIMISE, 'Size'],
+  ['length_in', 'length, in', MINIMISE, 'Size'],
+  ['max_diameter_in', 'max diameter, in', MINIMISE, 'Size'],
+  ['vol_cuin', 'volume, cu in', MINIMISE, 'Size'],
+
+  // Conditions the test was run under rather than properties of the
+  // suppressor, so none is an objective -- you control for a barrel length,
+  // you do not minimise it.
+  ['host_barrel_in', 'host barrel, in', null, 'Test conditions'],
+  ['host_grains', 'bullet, grains', null, 'Test conditions'],
+  ['year', 'year', null, 'Test conditions'],
 ];
 const MEASURE_LABEL = new Map(MEASURES.map(([key, label]) => [key, label]));
 const BETTER = new Map(MEASURES.map(([key, , better]) => [key, better]));
+
+const MEASURE_GROUP = new Map(MEASURES.map(([key, , , group]) => [key, group]));
+
+/** The part of a label the group heading above it does not already say. */
+function shortLabel(label, group) {
+  const prefix = `${group.toLowerCase()}, `;
+  return label.toLowerCase().startsWith(prefix) ? label.slice(prefix.length) : label;
+}
+
+/**
+ * Short names in the open list, the full name on whichever option is selected.
+ *
+ * A closed `select` shows only its selected option, with no group heading above
+ * it to say which mic that was -- and X and Y are frequently the same measure
+ * at two different mics, so "peak dBA" on both would be worse than useless.
+ * There is no way to style the two states apart, so the text moves instead.
+ */
+function syncAxisLabels(select) {
+  for (const option of select.options) {
+    const full = MEASURE_LABEL.get(option.value);
+    if (!full) continue; // the Z axis's "(none)"
+    option.textContent = option.selected
+      ? full
+      : shortLabel(full, MEASURE_GROUP.get(option.value));
+  }
+}
 
 /** How to say a direction in a sentence. */
 const comparative = (key) => (BETTER.get(key) === MAXIMISE ? 'higher' : 'lower');
@@ -1420,14 +1461,27 @@ function fillAxisMenus() {
       none.textContent = '(none — keep it 2D)';
       select.append(none);
     }
-    for (const [key, label] of available) {
+    let group = null;
+    let target = select;
+    for (const [key, label, , name] of available) {
+      if (name !== group) {
+        group = name;
+        target = document.createElement('optgroup');
+        target.label = name;
+        select.append(target);
+      }
       const option = document.createElement('option');
       option.value = key;
-      option.textContent = label;
-      select.append(option);
+      option.textContent = shortLabel(label, name);
+      // The collapsed control shows only the chosen option, with no heading
+      // above it to supply the context, so it keeps the full name.
+      option.title = label;
+      target.append(option);
     }
     select.value = initial;
+    syncAxisLabels(select);
     select.addEventListener('change', () => {
+      syncAxisLabels(select);
       if (id === 'axis-z') {
         state.zKey = select.value || null;
         state.view = { ...DEFAULT_VIEW_INIT };

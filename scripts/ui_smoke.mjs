@@ -342,6 +342,29 @@ check(
 );
 await tap("#facet-host_cycling input[value='manual']");
 
+// The axis menus carry two dozen measures; grouped, with the mic name said once
+// per heading instead of on every line.
+const menu = await evaluate(`(() => {
+  const s = document.getElementById('axis-y');
+  return {
+    groups: s.querySelectorAll('optgroup').length,
+    loose: [...s.children].filter((c) => c.tagName === 'OPTION').length,
+    options: s.options.length,
+    repeats: [...s.options].filter((o) => !o.selected && /^shooter's ear, /.test(o.textContent)).length,
+  };
+})()`);
+check('axis measures are grouped', menu.groups >= 4 && menu.loose === 0,
+  `${menu.options} measures in ${menu.groups} groups`);
+check('the group heading is not repeated on every option', menu.repeats === 0);
+// A collapsed select shows the selected option alone, with no heading over it,
+// so that one keeps the group in its text while its siblings drop it.
+const closed = await evaluate(`(() => {
+  const o = document.getElementById('axis-y').selectedOptions[0];
+  const group = o.parentElement.label;
+  return { text: o.textContent, group, names: o.textContent.toLowerCase().startsWith(group.toLowerCase()) };
+})()`);
+check('the closed control still names the mic', closed.names, closed.text);
+
 check(
   'barrel length is offered as an axis',
   await evaluate(`[...document.querySelectorAll('#axis-x option')]
