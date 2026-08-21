@@ -15,8 +15,8 @@ const MISSING = -1; // dictionary code for a null string
  * Dictionary columns stay as Int32Array of codes plus the string table, which
  * doubles as the facet list for a filter UI.
  */
-async function loadTable(url) {
-  const raw = await (await fetch(url)).json();
+async function loadTable(url, init) {
+  const raw = await (await fetch(url, init)).json();
   const columns = {};
   for (const [name, values] of Object.entries(raw.columns)) {
     columns[name] = raw.dictionaries?.[name]
@@ -29,6 +29,7 @@ async function loadTable(url) {
     columns,
     dictionaries: raw.dictionaries ?? {},
     datasets: raw.datasets ?? null,
+    version: raw.version ?? null,
     // Host code -> {label, description}, transcribed from each year's report;
     // the codes are not explained anywhere in all.csv.
     hosts: raw.hosts ?? {},
@@ -81,10 +82,15 @@ function expandWaveformIndex(index) {
 }
 
 export async function loadBundle(baseUrl = '.') {
-  const [catalog, shots, index] = await Promise.all([
-    loadTable(`${baseUrl}/catalog.json`),
-    loadTable(`${baseUrl}/shots.json`),
-    (await fetch(`${baseUrl}/waveforms.json`)).json(),
+  // The catalog is revalidated on every load (a 304 when nothing changed) and
+  // carries the version that busts the rest. That way the big files can be
+  // cached hard without a republish ever serving half a stale bundle.
+  const catalog = await loadTable(`${baseUrl}/catalog.json`, { cache: 'no-cache' });
+  const version = catalog.version ? `?v=${encodeURIComponent(catalog.version)}` : '';
+
+  const [shots, index] = await Promise.all([
+    loadTable(`${baseUrl}/shots.json${version}`),
+    (await fetch(`${baseUrl}/waveforms.json${version}`)).json(),
   ]);
   const entries = expandWaveformIndex(index);
   const waveforms = { ...index, entries };
@@ -95,7 +101,7 @@ export async function loadBundle(baseUrl = '.') {
     if (!byRun.has(entry.run)) byRun.set(entry.run, []);
     byRun.get(entry.run).push(entry);
   }
-  return { baseUrl, catalog, shots, waveforms, byId, byRun };
+  return { baseUrl, version, catalog, shots, waveforms, byId, byRun };
 }
 
 /* ------------------------------------------------------------------ filters */
@@ -251,7 +257,7 @@ export async function fetchRunEnvelopes(bundle, runId) {
   const envLen = bundle.waveforms.env_len;
   const base = first * envLen;
   const length = count * envLen;
-  const buffer = await fetchSlice(`${bundle.baseUrl}/envelopes.bin`, base, length);
+  const buffer = await fetchSlice(`${bundle.baseUrl}/envelopes.bin${bundle.version}`, base, length);
 
   return bundle.byRun.get(runId).map((entry) => {
     const [offset, size, scale] = entry.env;
@@ -271,7 +277,7 @@ export async function fetchRunEnvelopes(bundle, runId) {
 export async function fetchSamples(bundle, waveformId) {
   const entry = bundle.byId.get(waveformId);
   const [offset, length] = entry.raw;
-  const frame = await fetchSlice(`${bundle.baseUrl}/samples.bin`, offset, length);
+  const frame = await fetchSlice(`${bundle.baseUrl}/samples.bin${bundle.version}`, offset, length);
   const { values } = decodeFrame(frame);
   return { values, dt: entry.dt, t0: bundle.waveforms.window_start_s, entry };
 }

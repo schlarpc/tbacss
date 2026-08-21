@@ -29,6 +29,7 @@ whatever windowing was baked in at publish time.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -385,11 +386,25 @@ def publish(
 
 
 def _write_json(out: Path, catalog, shot_table, waveform_index) -> None:
-    for name, payload in (
-        ("catalog.json", catalog),
-        ("shots.json", shot_table),
-        ("waveforms.json", waveform_index),
-    ):
+    """Write the three JSON files, stamping the bundle with a content version.
+
+    The version is what lets a client cache the megabytes aggressively and
+    still never serve a stale bundle: it revalidates the small catalog and
+    fetches everything else at a versioned URL. Without it a long-lived cache
+    entry outlives a republish, which looks exactly like the export being
+    broken -- and did, once, here.
+    """
+    payloads = {
+        "catalog.json": catalog,
+        "shots.json": shot_table,
+        "waveforms.json": waveform_index,
+    }
+    digest = hashlib.sha256()
+    for name in sorted(payloads):
+        digest.update(json.dumps(payloads[name], separators=(",", ":"), sort_keys=True).encode())
+    catalog["version"] = digest.hexdigest()[:12]
+
+    for name, payload in payloads.items():
         (out / name).write_text(json.dumps(payload, separators=(",", ":")))
 
 
