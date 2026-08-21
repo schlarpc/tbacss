@@ -115,6 +115,14 @@ const state = {
   sort: { column: 'se_peak_dba', direction: 1 },
   frontierFirst: true,
   hover: null,
+  /**
+   * The run whose readout was summoned by a tap or click, as opposed to hover.
+   * A hover readout follows the cursor and dies with it; a pinned one stays put
+   * and needs dismissing, so it carries a close button. Distinct from
+   * `selectedRun`: dismissing the readout must not throw away the traces the
+   * click loaded.
+   */
+  pinned: null,
   filtersOpen: false,
   zKey: null,
   view: { ...DEFAULT_VIEW_INIT },
@@ -545,6 +553,7 @@ function renderScatter() {
     ctx.font = '13px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('No runs match these filters.', width / 2, height / 2);
+    syncPinned(); // nothing left to anchor to
     return;
   }
 
@@ -561,6 +570,9 @@ function renderScatter() {
       ctx.stroke();
     }
   }
+
+  // Points move when the slice changes; a pinned readout follows its own.
+  syncPinned();
 }
 
 /**
@@ -736,7 +748,7 @@ function renderScatter3D(ctx, width, height, usable, keys) {
  * Names come from the published bundle, which is ultimately somebody's CSV, so
  * they are inserted as text and never as markup.
  */
-function showTooltip(tip, canvas, point) {
+function showTooltip(tip, canvas, point, pinned = false) {
   const { catalog } = state.bundle;
   const i = point.i;
   const xKey = $('axis-x').value;
@@ -744,6 +756,17 @@ function showTooltip(tip, canvas, point) {
   const dict = (name) => catalog.dictionaries[name][catalog.columns[name][i]] ?? '—';
 
   tip.textContent = '';
+  tip.classList.toggle('pinned', pinned);
+  // A hover readout is dismissed by moving the cursor. A pinned one has no such
+  // gesture -- on touch there is no cursor at all -- so it gets a real control.
+  if (pinned) {
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'tip-close';
+    close.setAttribute('aria-label', 'Dismiss readout');
+    close.textContent = '×';
+    tip.append(close);
+  }
   const title = document.createElement('strong');
   title.textContent = runLabel(i);
   const code = dict('cartridge');
@@ -822,6 +845,32 @@ function showTooltip(tip, canvas, point) {
   tip.style.top = `${Math.max(4, Math.min(point.y - 10, wrap.height - tip.offsetHeight - 4))}px`;
 }
 
+/**
+ * Put the readout away without touching the selection.
+ *
+ * Changing an axis moves every point, so a readout anchored to where a point
+ * used to be is pointing at nothing. The traces below it are still the ones the
+ * reader asked for, though, so the selection survives.
+ */
+function dismissTooltip() {
+  state.pinned = null;
+  const tip = $('scatter-tip');
+  tip.hidden = true;
+  tip.classList.remove('pinned');
+}
+
+/**
+ * Re-anchor a pinned readout after the plot redraws, or drop it if its run left
+ * the slice. Hover owns the readout while the cursor is over a point, so this
+ * stays out of the way until the cursor is gone.
+ */
+function syncPinned() {
+  if (state.pinned === null || state.hover !== null) return;
+  const point = scatterPoints.find((p) => p.i === state.pinned);
+  if (point) showTooltip($('scatter-tip'), $('scatter'), point, true);
+  else dismissTooltip();
+}
+
 function nearestPoint(event) {
   const rect = $('scatter').getBoundingClientRect();
   const x = event.clientX - rect.left;
@@ -843,18 +892,27 @@ function bindScatter() {
   const canvas = $('scatter');
   const tip = $('scatter-tip');
 
-  // Touch has no hover, so a tap does both jobs: it selects the run and leaves
-  // the readout on screen until the next tap.
+  // The close button lives inside the readout, which is redrawn from scratch on
+  // every hover, so the listener goes on the container once rather than on a
+  // button that will not exist a moment later.
+  tip.addEventListener('click', (event) => {
+    if (!event.target.closest('.tip-close')) return;
+    dismissTooltip();
+    renderScatter();
+  });
+
+  // Touch has no hover, so a tap does both jobs: it selects the run and pins
+  // the readout, which then stays until it is dismissed.
   canvas.addEventListener('pointerup', (event) => {
     if (event.pointerType !== 'touch') return;
     if (bindRotation.isDragging?.()) return;
     const point = nearestPoint(event);
     if (!point) {
-      tip.hidden = true;
+      dismissTooltip();
       return;
     }
-    state.hover = point.i;
-    showTooltip(tip, canvas, point);
+    state.pinned = point.i;
+    showTooltip(tip, canvas, point, true);
     selectRun(point.i);
   });
 
@@ -862,21 +920,19 @@ function bindScatter() {
     if (event.pointerType === 'touch' || bindRotation.isDragging?.()) return;
     const point = nearestPoint(event);
     state.hover = point ? point.i : null;
-    if (!point) {
-      tip.hidden = true;
-      renderScatter();
-      return;
-    }
-    showTooltip(tip, canvas, point);
+    if (point) showTooltip(tip, canvas, point, point.i === state.pinned);
+    else if (state.pinned !== null) syncPinned();
+    else tip.hidden = true;
     renderScatter();
   });
 
   canvas.addEventListener('pointerleave', (event) => {
     // A touch pointer is destroyed on lift, which fires pointerleave straight
-    // after the tap. Keeping the readout up until the next tap is the point.
+    // after the tap; a pinned readout has to outlive that.
     if (event.pointerType === 'touch') return;
     state.hover = null;
-    tip.hidden = true;
+    if (state.pinned !== null) syncPinned();
+    else tip.hidden = true;
     renderScatter();
   });
 
@@ -885,7 +941,13 @@ function bindScatter() {
     if (event.pointerType === 'touch') return;
     if (bindRotation.isDragging?.()) return;
     const point = nearestPoint(event);
-    if (point) selectRun(point.i);
+    if (!point) {
+      dismissTooltip();
+      return;
+    }
+    state.pinned = point.i;
+    showTooltip(tip, canvas, point, true);
+    selectRun(point.i);
   });
 }
 
@@ -1371,6 +1433,10 @@ function fillAxisMenus() {
         state.view = { ...DEFAULT_VIEW_INIT };
         $('reset-view').hidden = !state.zKey;
       }
+      // The readout quotes the axes it was opened against, and its anchor point
+      // is about to move. Put it away -- but leave the run selected, so the
+      // traces below do not vanish for the sake of a tooltip.
+      dismissTooltip();
       refilter();
     });
   }

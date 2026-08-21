@@ -163,6 +163,55 @@ check(
   await evaluate("document.getElementById('scatter-tip').hidden === false"),
 );
 
+// 5b. A readout summoned by a tap is pinned: it has a dismiss control, an axis
+// change puts it away without dropping the run, and the × does the same.
+check(
+  'a tapped readout carries a dismiss button',
+  await evaluate("document.querySelectorAll('#scatter-tip .tip-close').length === 1"),
+);
+const beforeAxis = await evaluate("document.getElementById('wave-title').textContent");
+await evaluate(`(() => {
+  const y = document.getElementById('axis-y');
+  y.value = y.value === 'se_peak_dba' ? 'ml_peak_dba' : 'se_peak_dba';
+  y.dispatchEvent(new Event('change'));
+})()`);
+await new Promise((r) => setTimeout(r, 600));
+check(
+  'changing a dimension dismisses the readout',
+  await evaluate("document.getElementById('scatter-tip').hidden === true"),
+);
+check(
+  'but the run stays selected',
+  (await evaluate("document.getElementById('wave-title').textContent")) === beforeAxis,
+  beforeAxis,
+);
+
+// The × dismisses without unselecting either.
+await tap('#scatter');
+if (await evaluate("document.querySelectorAll('#scatter-tip .tip-close').length === 1")) {
+  const pinnedRun = await evaluate("document.getElementById('wave-title').textContent");
+  // Aim just outside the visible button: on a phone the target is grown with a
+  // negatively-inset ::after, and a hit area nothing dispatches to is no target.
+  const edge = await evaluate(`(() => {
+    const r = document.querySelector('#scatter-tip .tip-close').getBoundingClientRect();
+    const el = document.elementFromPoint(r.left - 6, r.top + r.height / 2);
+    return el ? el.closest('.tip-close') !== null : false;
+  })()`);
+  check('the grown hit area is what a near-miss lands on', narrow ? edge : true);
+  await tap('#scatter-tip .tip-close');
+  check(
+    'the dismiss button closes the readout',
+    await evaluate("document.getElementById('scatter-tip').hidden === true"),
+  );
+  check(
+    'and leaves the run selected',
+    (await evaluate("document.getElementById('wave-title').textContent")) === pinnedRun,
+    pinnedRun,
+  );
+} else {
+  check('the dismiss button closes the readout', false, 'no point under the tap');
+}
+
 // 6. Traces and full rate, on a run known to have waveforms — a tap lands
 // wherever it lands, and 2026 is published as tables only.
 await call('Page.navigate', { url: `${base}#run=20` });
@@ -423,11 +472,20 @@ check('no horizontal overflow', overflow <= 0, `${overflow}px`);
 
 // 12. Touch targets are big enough to hit.
 const small = await evaluate(`(() => {
+  // A control may keep a small border box and grow its hit area with a
+  // negatively-inset ::after, so measure what a finger actually lands on.
+  const reach = (el) => {
+    const after = getComputedStyle(el, '::after');
+    if (after.content === 'none' || after.position !== 'absolute') return 0;
+    const grow = (v) => Math.max(0, -parseFloat(v) || 0);
+    return grow(after.top) + grow(after.bottom);
+  };
   const bad = [];
   for (const el of document.querySelectorAll('button, select, input, summary')) {
     if (el.offsetParent === null) continue;
     const r = el.getBoundingClientRect();
-    if (r.height > 0 && r.height < 32) bad.push((el.id || el.tagName) + ':' + Math.round(r.height));
+    const h = r.height + reach(el);
+    if (r.height > 0 && h < 32) bad.push((el.id || el.className || el.tagName) + ':' + Math.round(h));
   }
   return bad;
 })()`);
