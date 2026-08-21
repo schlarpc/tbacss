@@ -125,6 +125,20 @@ function hostLabel(code) {
   return state.bundle?.catalog.hosts?.[code]?.label ?? String(code);
 }
 
+/**
+ * TBAC's own warning about a run's numbers, if there is one.
+ *
+ * Published in report prose rather than the CSV, so a tool built on the CSV
+ * alone would rank suppressors on figures TBAC says to disregard.
+ */
+function caveatFor(index) {
+  const { catalog } = state.bundle;
+  const code = catalog.columns.caveat?.[index];
+  return code === undefined || code < 0
+    ? null
+    : catalog.dictionaries.caveat[code] ?? null;
+}
+
 function hostDescription(code) {
   return state.bundle?.catalog.hosts?.[code]?.description ?? null;
 }
@@ -343,29 +357,49 @@ function refilter() {
   state.visible = maskRows(catalog, mask);
 
   // Each measure knows which way is better, so there is nothing to configure.
-  // The frontier covers every axis in play, so adding Z makes it 3-objective.
+  // Axes that are dimensions rather than objectives -- year, host barrel --
+  // drop out of the frontier instead of cancelling it, so plotting against one
+  // still answers "which of these is not beaten on the rest".
   const active = [$('axis-x').value, $('axis-y').value];
   if (state.zKey) active.push(state.zKey);
-  const dimension = active.find((key) => !BETTER.get(key)) ?? null;
+  const objectives = active.filter((key) => BETTER.get(key));
+  const dimensions = active.filter((key) => !BETTER.get(key));
 
-  state.frontier = dimension
-    ? new Set()
-    : new Set(
+  // Restrict to rows the chart can actually draw, so the ringed points, the
+  // tile count and the table all agree. A run with no recorded barrel is not
+  // on this plot, so it is not "on this plot's frontier" either.
+  const plottable = Uint8Array.from(mask);
+  for (const key of active) {
+    const column = catalog.columns[key];
+    for (let i = 0; i < catalog.n; i++) {
+      if (plottable[i] && Number.isNaN(column[i])) plottable[i] = 0;
+    }
+  }
+
+  state.frontier = objectives.length
+    ? new Set(
         paretoFront(
           catalog,
-          active.map((key) => ({ column: key, direction: BETTER.get(key) })),
-          mask,
+          objectives.map((key) => ({ column: key, direction: BETTER.get(key) })),
+          plottable,
         ),
-      );
+      )
+    : new Set();
 
-  const phrase = active
+  const phrase = objectives
     .map((key) => `a ${comparative(key)} ${MEASURE_LABEL.get(key)}`)
     .join(', ');
-  $('scatter-hint').textContent = dimension
-    ? `Points are test runs. No frontier here: ${MEASURE_LABEL.get(dimension)} `
-      + 'is a dimension, not something to optimise.'
-    : 'Points are test runs. Ringed points are on the Pareto frontier — nothing '
-      + `in the current slice has all of ${phrase}.`;
+  const ignored = dimensions.map((key) => MEASURE_LABEL.get(key)).join(' and ');
+  $('scatter-hint').textContent = objectives.length
+    ? 'Points are test runs. Ringed points are on the Pareto frontier — nothing '
+      + `shown has all of ${phrase}.`
+      + (ignored
+        ? ` ${ignored} ${dimensions.length > 1 ? 'are dimensions' : 'is a dimension'},`
+          + ' so it does not constrain the frontier.'
+        : '')
+    : `Points are test runs. No frontier here: ${ignored} `
+      + `${dimensions.length > 1 ? 'are dimensions' : 'is a dimension'}, `
+      + 'not something to optimise.';
 
   updateFilterBadges();
   renderTiles();
@@ -672,6 +706,13 @@ function showTooltip(tip, canvas, point) {
     line.append(value);
     tip.append(line);
   }
+  const caveat = caveatFor(i);
+  if (caveat) {
+    const warn = document.createElement('div');
+    warn.className = 'warn';
+    warn.textContent = `⚠ ${caveat}`;
+    tip.append(warn);
+  }
   if (state.frontier.has(i)) {
     const note = document.createElement('div');
     note.className = 'dim';
@@ -804,12 +845,17 @@ function renderTable() {
   });
 
   const shown = order.slice(0, MAX_TABLE_ROWS);
+  const flagged = state.visible.filter((i) => caveatFor(i)).length;
+  const warning = flagged
+    ? `${flagged} run${flagged === 1 ? '' : 's'} shown carry a TBAC advisory (⚠), `
+      + 'hover for it. '
+    : '';
   const grouped =
     state.frontierFirst && state.frontier.size
       ? `Frontier runs first (${state.frontier.size}), then ${MEASURE_LABEL.get(key) ?? key}. `
       : '';
   $('table-hint').textContent =
-    `The table view: every value on the chart, readable without colour. ${grouped}` +
+    `The table view: every value on the chart, readable without colour. ${warning}${grouped}` +
     (shown.length < order.length
       ? `Showing the first ${shown.length} of ${order.length} matching runs — narrow the filters to see the rest.`
       : '');
@@ -819,6 +865,11 @@ function renderTable() {
   for (const i of shown) {
     const tr = document.createElement('tr');
     if (state.frontier.has(i)) tr.className = 'frontier';
+    const caveat = caveatFor(i);
+    if (caveat) {
+      tr.classList.add('caveated');
+      tr.title = `⚠ ${caveat}`;
+    }
     if (state.selectedRun === i) tr.setAttribute('aria-selected', 'true');
     tr.addEventListener('click', () => selectRun(i));
 

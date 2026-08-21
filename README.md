@@ -290,6 +290,15 @@ python3 -m pytest
   anything real — before the fix IASW ranked as the lightest *and* shortest
   suppressor in the dataset and sat unbeatable on every weight or length
   frontier.
+* **TBAC published a warning that is not in the data.** The 2024 `.22LR-BA`
+  host was a last-minute substitute after a rifle malfunction, and it rings at
+  the shooter's-ear mic on roughly half the shots: *"it is probably best to
+  ignore the SE numbers for this run of .22's"*. That is 26 runs whose SE
+  figures should not be ranked on, and it lives only in the report prose, so
+  anything built on `all.csv` alone would use them. `tbacss/caveats.py` makes
+  it machine-readable, `publish` flags the affected runs, and the explorer
+  marks them. It is the only substantive advisory across all four years —
+  found by grepping every report for advisory language, not by luck.
 * Host codes are not in `all.csv` — they are prose in each year's report.
   `tbacss/hosts.py` is that prose *parsed*, covering all 51 codes, and
   `publish` both ships it and joins it onto every run as `host_barrel_in`,

@@ -20,9 +20,19 @@ Why these attributes and not others:
 
 **Sourcing.** Every value is either stated in the report or is a fact about the
 named firearm -- a Marlin 1895 is a lever action, an AR-15 is self-loading, a
-Volquartsen Summit is a bolt gun. Where the report names no barrel length, or
-no gun specific enough to pin one down, the field is ``None`` rather than a
-guess: ``.375RUM-BA`` is "W.T.F.'s .375 RUM" and that is all anyone knows.
+Volquartsen Summit is a bolt gun. ``barrel_source`` records which. Where the
+report names no barrel length, and no gun specific enough to settle one, the
+field is ``None`` rather than a guess: ``.375RUM-BA`` is "WTF's .375 RUM" and
+that is all the report says.
+
+Descriptions carry the report's content but not its exact wording -- word
+order is normalised, abbreviations are expanded ("AE" to Allen Engineering,
+"AI-AX" to Accuracy International AX) and typos are fixed ("specual",
+"Carcal", "integrally-suppressor"). They were diffed line by line against
+every year's legend to check nothing was dropped in the process.
+
+Warnings TBAC attached to particular numbers live in :mod:`tbacss.caveats`,
+not here.
 
 Codes were reused loosely across years -- 2023's bare ``5.56`` is a 10.3" MK18
 while 2024's ``5.56-16AR`` is a 16" DD -- so the attributes are per code, and a
@@ -156,7 +166,7 @@ HOSTS: dict[str, Host] = {
         subsonic=False,
     ),
     "9mm": _h(
-        "9mm pistol", "CCI Blazer Brass 124gr from a Staccato P",
+        "9mm pistol", "CCI Blazer Brass 124gr from a Staccato P (factory threaded)",
         cycling="semi", platform="pistol", grains=124,
     ),
     "9mmSTTH": _h(

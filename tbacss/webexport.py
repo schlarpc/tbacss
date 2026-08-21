@@ -39,6 +39,7 @@ from pathlib import Path
 import numpy as np
 
 from . import blobs, wavecodec
+from .caveats import CAVEATS, as_dicts, caveats_for
 from .hosts import HOSTS, Host
 from .analysis import TIME_START_S, TIME_STOP_S, TIME_STOP_SHORT_S, is_short_window
 
@@ -275,6 +276,18 @@ def publish(
         )
         catalog["dictionaries"]["host_ammo"] = supersonic_dict
         catalog["columns"]["host_ammo"] = supersonic
+
+        # Advisories TBAC published in prose. Without these a reader ranks
+        # suppressors on numbers TBAC says to disregard.
+        catalog["caveats"] = as_dicts()
+        years = [r["year"] for r in runs]
+        flags = [
+            "; ".join(c.summary for c in caveats_for(year, code)) or None
+            for year, code in zip(years, codes)
+        ]
+        caveat_dict, caveat_codes = _encode_text_column(flags)
+        catalog["dictionaries"]["caveat"] = caveat_dict
+        catalog["columns"]["caveat"] = caveat_codes
 
         # -- per-shot metrics ------------------------------------------------
         shots = db.query(

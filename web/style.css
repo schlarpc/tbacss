@@ -18,6 +18,8 @@
   --dot: #b6b5ae;
   --dot-strong: #898781;
   --wash: rgba(42, 120, 214, 0.08);
+  /* Status colour, reserved: never used for a series. */
+  --status-warning: #b06a00;
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
@@ -36,6 +38,7 @@
     --dot: #55544f;
     --dot-strong: #898781;
     --wash: rgba(57, 135, 229, 0.14);
+    --status-warning: #fab219;
   }
 }
 :root[data-theme="dark"] {
@@ -54,6 +57,7 @@
   --dot: #55544f;
   --dot-strong: #898781;
   --wash: rgba(57, 135, 229, 0.14);
+  --status-warning: #fab219;
 }
 
 * { box-sizing: border-box; }
@@ -298,6 +302,12 @@ tbody tr { cursor: pointer; }
 tbody tr:hover { background: var(--wash); }
 tbody tr[aria-selected="true"] { background: var(--wash); }
 tbody tr.frontier td:first-child { box-shadow: inset 3px 0 0 var(--series-1); }
+/* A published advisory on the numbers: marked, never hidden. */
+tbody tr.caveated td:nth-child(2)::before {
+  content: "⚠ ";
+  color: var(--status-warning);
+}
+.tooltip .warn { color: var(--status-warning); }
 
 .shots { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
 .empty { color: var(--text-muted); font-size: 13px; padding: 28px 0; text-align: center; }

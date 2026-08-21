@@ -298,23 +298,41 @@ check(
   await evaluate(`[...document.querySelectorAll('#axis-x option')]
     .some((o) => o.value === 'host_barrel_in')`),
 );
-await evaluate(`(() => {
-  const x = document.getElementById('axis-x');
-  x.value = 'host_barrel_in';
-  x.dispatchEvent(new Event('change'));
-})()`);
-await new Promise((r) => setTimeout(r, 500));
+
+const setAxis = async (id, value) => {
+  await evaluate(`(() => {
+    const s = document.getElementById(${JSON.stringify(id)});
+    s.value = ${JSON.stringify(value)};
+    s.dispatchEvent(new Event('change'));
+  })()`);
+  await new Promise((r) => setTimeout(r, 500));
+};
+const frontierCount = () =>
+  evaluate("document.querySelectorAll('.tile')[1].querySelector('.value').textContent");
+const hint = () => evaluate("document.getElementById('scatter-hint').textContent");
+
+// One dimension on an axis drops out of the frontier rather than cancelling
+// it: the remaining objective still has a frontier.
+await setAxis('axis-x', 'host_barrel_in');
 check(
-  'barrel length is a dimension, so it switches the frontier off',
-  (await evaluate("document.getElementById('scatter-hint').textContent")).includes(
-    'not something to optimise',
-  ),
+  'a dimension drops out, leaving a frontier over the rest',
+  Number(await frontierCount()) > 0,
+  `${await frontierCount()} on the frontier over the objective axis alone`,
 );
-await evaluate(`(() => {
-  const x = document.getElementById('axis-x');
-  x.value = 'weight_oz';
-  x.dispatchEvent(new Event('change'));
-})()`);
+check(
+  'and the hint says the dimension is not constraining it',
+  (await hint()).includes('does not constrain the frontier'),
+);
+
+// A dimension on every axis leaves nothing to optimise.
+await setAxis('axis-y', 'year');
+check(
+  'all-dimension axes have no frontier',
+  (await frontierCount()) === '0' && (await hint()).includes('No frontier here'),
+);
+
+await setAxis('axis-y', 'se_peak_dba');
+await setAxis('axis-x', 'weight_oz');
 
 // 10. Nothing overflows the viewport horizontally.
 const overflow = await evaluate(
