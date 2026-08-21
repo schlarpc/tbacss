@@ -59,6 +59,11 @@ const MEASURES = [
   ['length_in', 'length, in', MINIMISE],
   ['max_diameter_in', 'max diameter, in', MINIMISE],
   ['vol_cuin', 'volume, cu in', MINIMISE],
+  // Host attributes. Both are conditions the test was run under rather than
+  // properties of the suppressor, so neither is an objective -- you control
+  // for a barrel length, you do not minimise it.
+  ['host_barrel_in', 'host barrel, in', null],
+  ['host_grains', 'bullet, grains', null],
   ['year', 'year', null],
 ];
 const MEASURE_LABEL = new Map(MEASURES.map(([key, label]) => [key, label]));
@@ -258,11 +263,8 @@ function currentSpec() {
   const years = checked('facet-year').map(Number);
   if (years.length) spec.year = [Math.min(...years), Math.max(...years)];
 
-  for (const [id, column] of [
-    ['facet-caliber', 'caliber'],
-    ['facet-cartridge', 'cartridge'],
-    ['facet-manufacturer', 'manufacturer'],
-  ]) {
+  for (const [column, id] of FACETS) {
+    if (column === 'year') continue; // handled as a set below
     const picked = checked(id);
     if (picked.length) spec[column] = new Set(picked);
   }
@@ -279,6 +281,8 @@ const FACETS = [
   ['caliber', 'facet-caliber', 'count-caliber'],
   ['cartridge', 'facet-cartridge', 'count-cartridge'],
   ['manufacturer', 'facet-manufacturer', 'count-manufacturer'],
+  ['host_cycling', 'facet-host_cycling', 'count-host_cycling'],
+  ['host_ammo', 'facet-host_ammo', 'count-host_ammo'],
 ];
 
 /**
@@ -1202,6 +1206,8 @@ async function main() {
     ['facet-caliber', 'caliber', 'count'],
     ['facet-cartridge', 'cartridge', 'name'],
     ['facet-manufacturer', 'manufacturer', 'name'],
+    ['facet-host_cycling', 'host_cycling', 'count'],
+    ['facet-host_ammo', 'host_ammo', 'count'],
   ]) {
     const counts = countsFor(column);
     const describe = column === 'cartridge' ? hostLabel : String;

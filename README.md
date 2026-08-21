@@ -291,10 +291,38 @@ python3 -m pytest
   suppressor in the dataset and sat unbeatable on every weight or length
   frontier.
 * Host codes are not in `all.csv` — they are prose in each year's report.
-  `tbacss/hosts.py` is that prose transcribed, covering all 51 codes, and
-  `publish` ships it so a reader never has to decode `.50BW-SUB-10.5AR`. Note
-  that codes were reused loosely: 2023's bare `5.56` is a 10.3" MK18 while
-  2024's `5.56-16AR` is a 16" DD.
+  `tbacss/hosts.py` is that prose *parsed*, covering all 51 codes, and
+  `publish` both ships it and joins it onto every run as `host_barrel_in`,
+  `host_cycling`, `host_platform`, `host_ammo` and `host_grains`. So the two
+  biggest confounders in the dataset stop being locked inside a string:
+
+  | attribute | coverage | values |
+  | --- | ---: | --- |
+  | `host_cycling` | 1185 / 1188 runs | 583 manual, 602 self-loading |
+  | `host_barrel_in` | 1010 / 1188 runs | 5" to 27" |
+  | `host_platform` | 1187 / 1188 runs | bolt, AR, pistol, PCC, lever, rifle |
+  | `host_ammo` | 1173 / 1188 runs | 391 subsonic, 782 supersonic |
+
+  Cycling matters because TBAC's own FAQ says so: "suppressors shot on 5.56
+  will never have their peak less than the SS crack because the action noise
+  ('port pop') on the MK18 dominates." A bolt gun has no port to pop. Barrel
+  length matters because a can on a 10.3" MK18 and the same can on a 20" bolt
+  gun are not comparable numbers.
+
+  Values are either stated in the report or are facts about the named firearm
+  — a Marlin 1895 is a lever action, a Volquartsen Summit is a bolt gun. Where
+  the report names no barrel and no gun specific enough to pin one down, the
+  field is null rather than a guess. `host_ammo` is tri-state for the same
+  reason: 124gr 9mm sits on the transonic line, so it is "not stated" rather
+  than being called supersonic.
+
+  Neither is an objective — you control for a barrel length, you do not
+  minimise it — so both are `null` direction and putting one on an axis
+  switches the frontier off.
+
+  Codes were reused loosely: 2023's bare `5.56` is a 10.3" MK18 while 2024's
+  `5.56-16AR` is a 16" DD, so attributes are per code and never assumed to
+  carry across years.
 * The unsuppressed reference is manufacturer `Bare Muzzle` in 2023 and `Bare`
   from 2024 on; `test_run.is_baseline` flags either. 2023 has two, 2025 three,
   and the 2026 table has none.

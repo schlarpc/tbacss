@@ -33,13 +33,13 @@ import hashlib
 import json
 import math
 import os
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import numpy as np
 
 from . import blobs, wavecodec
-from .hosts import HOSTS
+from .hosts import HOSTS, Host
 from .analysis import TIME_START_S, TIME_STOP_S, TIME_STOP_SHORT_S, is_short_window
 
 __all__ = ["ENVELOPE_BUCKETS", "PublishReport", "publish"]
@@ -242,10 +242,39 @@ def publish(
         # decode ".50BW-SUB-10.5AR" for themselves.
         used = set(catalog["dictionaries"]["cartridge"])
         catalog["hosts"] = {
-            code: {"label": label, "description": description}
-            for code, (label, description) in HOSTS.items()
-            if code in used
+            code: asdict(host) for code, host in HOSTS.items() if code in used
         }
+
+        # Join the host attributes onto every run as real columns, so the same
+        # filter and frontier code works on them without a special case. The
+        # barrel a can was tested on is the biggest confounder in the set, and
+        # it was previously locked inside a string like ".300BO-16BA".
+        codes = [r["cartridge"] for r in runs]
+        blank = Host(label="", description="")
+        for column, field in (
+            ("host_barrel_in", "barrel_in"),
+            ("host_grains", "grains"),
+        ):
+            catalog["columns"][column] = _finite(
+                [getattr(HOSTS.get(code, blank), field) for code in codes]
+            )
+        for column, field in (("host_cycling", "cycling"), ("host_platform", "platform")):
+            dictionary, values = _encode_text_column(
+                [getattr(HOSTS.get(code, blank), field) for code in codes]
+            )
+            catalog["dictionaries"][column] = dictionary
+            catalog["columns"][column] = values
+        # Tri-state, so "not stated" never reads as "supersonic".
+        supersonic_dict, supersonic = _encode_text_column(
+            [
+                None
+                if HOSTS.get(code, blank).subsonic is None
+                else ("subsonic" if HOSTS[code].subsonic else "supersonic")
+                for code in codes
+            ]
+        )
+        catalog["dictionaries"]["host_ammo"] = supersonic_dict
+        catalog["columns"]["host_ammo"] = supersonic
 
         # -- per-shot metrics ------------------------------------------------
         shots = db.query(

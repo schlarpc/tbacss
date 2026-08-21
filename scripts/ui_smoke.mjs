@@ -136,10 +136,13 @@ await tap('#reset');
 const cleared = await evaluate("document.querySelector('.tile .value').textContent");
 check('clear filters restores the slice', cleared === before, cleared);
 
-// 5. A tap on the scatter selects a run and shows its readout.
+// 5. A tap on the scatter selects a run and shows its readout. Scroll it into
+// view first: a coordinate outside the viewport lands nowhere, and the filter
+// row is tall enough to push the plot below the fold.
 if (narrow) await evaluate("document.getElementById('filters').hidden = true");
 const tapped = await evaluate(`(() => {
   const c = document.getElementById('scatter');
+  c.scrollIntoView({ block: 'center' });
   const r = c.getBoundingClientRect();
   return { x: r.left + r.width * 0.5, y: r.top + r.height * 0.5, w: r.width };
 })()`);
@@ -201,7 +204,9 @@ check(
 
 // Dragging rotates rather than selecting.
 const centre = await evaluate(`(() => {
-  const r = document.getElementById('scatter').getBoundingClientRect();
+  const c = document.getElementById('scatter');
+  c.scrollIntoView({ block: 'center' });
+  const r = c.getBoundingClientRect();
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 })()`);
 const before3D = await evaluate("document.getElementById('wave-title').textContent");
@@ -273,13 +278,51 @@ check(
   hostNames.slice(0, 3).join(' | '),
 );
 
-// 9. Nothing overflows the viewport horizontally.
+// 9. Host attributes are filterable and plottable.
+if (narrow) {
+  await evaluate("document.getElementById('filters').hidden = false");
+  await tap('#det-host_cycling summary');
+}
+const allRuns = await evaluate("document.querySelector('.tile .value').textContent");
+await tap("#facet-host_cycling input[value='manual']");
+const manualOnly = await evaluate("document.querySelector('.tile .value').textContent");
+check(
+  'action filters the slice',
+  manualOnly !== allRuns && Number(manualOnly.replace(/,/g, '')) > 0,
+  `${allRuns} → ${manualOnly} manual-action runs`,
+);
+await tap("#facet-host_cycling input[value='manual']");
+
+check(
+  'barrel length is offered as an axis',
+  await evaluate(`[...document.querySelectorAll('#axis-x option')]
+    .some((o) => o.value === 'host_barrel_in')`),
+);
+await evaluate(`(() => {
+  const x = document.getElementById('axis-x');
+  x.value = 'host_barrel_in';
+  x.dispatchEvent(new Event('change'));
+})()`);
+await new Promise((r) => setTimeout(r, 500));
+check(
+  'barrel length is a dimension, so it switches the frontier off',
+  (await evaluate("document.getElementById('scatter-hint').textContent")).includes(
+    'not something to optimise',
+  ),
+);
+await evaluate(`(() => {
+  const x = document.getElementById('axis-x');
+  x.value = 'weight_oz';
+  x.dispatchEvent(new Event('change'));
+})()`);
+
+// 10. Nothing overflows the viewport horizontally.
 const overflow = await evaluate(
   'document.documentElement.scrollWidth - document.documentElement.clientWidth',
 );
 check('no horizontal overflow', overflow <= 0, `${overflow}px`);
 
-// 10. Touch targets are big enough to hit.
+// 11. Touch targets are big enough to hit.
 const small = await evaluate(`(() => {
   const bad = [];
   for (const el of document.querySelectorAll('button, select, input, summary')) {

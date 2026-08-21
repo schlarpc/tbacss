@@ -20,42 +20,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from tbacss.hosts import host_description  # noqa: E402
 from tbacss.summit import read_summary_csv  # noqa: E402
-
-HOSTS = {
-    ".22LR-BA": '16.5" bolt-action .22LR, Volquartsen Summit, CCI Std Vel',
-    ".22LR-PS": ".22LR pistol, Sig P322, CCI Std Vel",
-    ".22LR-Integral-SA": "Innovative Arms integrally-suppressed .22 rifle",
-    "5.56-16AR": '16" DD AR-15, LC M193 55gr',
-    "5.56-105AR": '10.5" 5.56 AR, LC M193',
-    "5.56-11.5AR": 'Allen Engineering 11.5" AR',
-    "5.56-12.5AR": 'Allen Engineering 12.5" AR',
-    "5.56-14.5AR": 'Allen Engineering 14.5" AR',
-    "5.56-AE12.5AR": 'Allen Engineering 12.5" AR',
-    "5.56-AE18AR": 'Allen Engineering 18" AR',
-    "5.56-MK12AR": "B&T MK12",
-    "13.7-5.56-Infidel": '13.7" 5.56 AR (Noveske Infidel)',
-    "6CM-BA": "6mm Creedmoor bolt action",
-    "6.5GREN-20AR": 'W.T.F. 20" 6.5 Grendel AR',
-    ".300WM-BA": '26" Savage 110, Federal 150gr SP .300 Win Mag',
-    ".300BO-16AR-SUB": '16" DD .300BO AR, 220gr subsonic Ammo Inc Stelth',
-    ".300BO-16BA": '16" bolt action .300BO, 220gr subsonic Ammo Inc Stelth',
-    ".300BO-RAT-110": "Sig Rattler, 110gr Barnes",
-    ".300BO-RAT-220": "Sig Rattler, 220gr subsonic",
-    ".300BO-SUBS-Integral": "B&T integrally-suppressed rifle",
-    ".308-20BA": '20" AI-AX, M118LR',
-    ".308-24BA": 'B&T 24" .308, M118LR',
-    ".338LM-26BA": '26" Barrett MRAD, Hornady 285gr ELD',
-    ".338LM-SAKO": '27" Sako TRG M10, 250gr Sako .338 Lapua',
-    ".50BW-SUB-10.5AR": '10.5" AR, subsonic .50 Beowulf',
-    "9mm-PS": "Canik METE SFX pistol, Ammo Inc Stelth 165gr",
-    "9mm-19X": "Integral Glock 19X, Ammo Inc Stelth 165gr",
-    "9mm-5AR": '5" AR9',
-    "9mm-EI-PCC": '8.5" AR9 (Elite Iron), Stelth 165gr',
-    "10mm-SUB-Stribog": "Grand Power Stribog, subsonic 10mm",
-    "Berretta-32Auto": "Beretta .32 Auto pistol",
-}
-
 
 def load_waveform_stats(db_path: Path) -> dict[int, dict]:
     if not db_path.exists():
@@ -157,7 +123,7 @@ def main() -> int:
             str(sum(1 for r in years[year] if r.cartridge == cartridge) or "--")
             for year in ordered
         ]
-        description = HOSTS.get(cartridge, "_not described in the report_")
+        description = host_description(cartridge) or "_not described in the report_"
         out.append(f"| `{cartridge}` | {description} | " + " | ".join(counts) + " |")
     out.append("")
 
