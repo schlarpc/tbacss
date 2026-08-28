@@ -265,6 +265,13 @@ HOSTS: dict[str, Host] = {
         platform="rifle", integral=True,
         subsonic=False,
     ),
+    "7BC-18BA": _h(
+        '7mm Backcountry, 18" bolt',
+        "Federal Peak 155gr 7mm Backcountry (a high-pressure load) from "
+        "W.T.F.'s 18\" bolt action",
+        barrel_in=18, barrel_source="report", cycling="manual", platform="bolt", grains=155,
+        subsonic=False,
+    ),
     ".300BO-RAT-110": _h(
         ".300 BLK Rattler, 110gr", "a Sig Rattler shooting 110gr Barnes",
         cycling="semi", platform="AR", grains=110,

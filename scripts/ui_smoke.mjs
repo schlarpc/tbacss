@@ -213,7 +213,7 @@ if (await evaluate("document.querySelectorAll('#scatter-tip .tip-close').length 
 }
 
 // 6. Traces and full rate, on a run known to have waveforms — a tap lands
-// wherever it lands, and 2026 is published as tables only.
+// wherever it lands, and not every run has a capture in the release set.
 await call('Page.navigate', { url: `${base}#run=20` });
 await new Promise((r) => setTimeout(r, 3500));
 check(

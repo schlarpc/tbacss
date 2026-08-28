@@ -40,7 +40,7 @@ pip install numpy scipy pandas
 ## Get the sources
 
 The published summary tables are tracked here. Everything else — the report
-pages, TBAC's reference Octave, and the ~21 GB of release archives — is
+pages, TBAC's reference Octave, and the ~27 GB of release archives — is
 fetched:
 
 ```
@@ -55,15 +55,12 @@ under.
 ## Build
 
 ```
-for year in 2023 2024 2025; do
+for year in 2023 2024 2025 2026; do
     python -m tbacss build tbacss.db \
         --year $year \
         --archive ${year}_SUMMIT_RELEASE_SET.tar.gz \
         --summary-csv summit$year/all.csv
 done
-
-# 2026's release set is not posted yet; import the published table alone
-python -m tbacss build tbacss.db --year 2026 --summary-csv summit2026/all.csv
 
 python -m tbacss analyze tbacss.db      # per-shot metrics from the waveforms
 python -m tbacss bands tbacss.db        # one-third-octave spectra, for the shape
@@ -177,7 +174,7 @@ python3 scripts/serve.py                     # http://127.0.0.1:8765
 
 Use `scripts/serve.py`, not `python -m http.server`: the stock one ignores
 `Range` and answers 200 with the whole file, so every waveform click would pull
-all 432 MB of `samples.bin`. Any real static host (S3, Cloudflare, nginx,
+all 559 MB of `samples.bin`. Any real static host (S3, Cloudflare, nginx,
 Caddy) handles ranges correctly.
 
 The page filters on facets and numeric ranges, plots any measure against any
@@ -287,7 +284,7 @@ the slice is sparse enough to read them, and the readout says how many other
 visible runs are *not* distinguishable from the one you picked.
 
 **First-round pop.** The first shot through a cold, air-filled can is louder;
-the median is +1.11 dBA and it is positive in 72% of run/mic combinations.
+the median is +1.13 dBA and it is positive in 72% of run/mic combinations.
 Averaging five shots hides it, and it is the shot that matters in the field.
 
 **Net reduction.** TBAC fires an unsuppressed reference on most hosts, so "how
@@ -360,17 +357,17 @@ python3 -m pytest
   marks them. It is the only substantive advisory across all four years —
   found by grepping every report for advisory language, not by luck.
 * Host codes are not in `all.csv` — they are prose in each year's report.
-  `tbacss/hosts.py` is that prose *parsed*, covering all 51 codes, and
+  `tbacss/hosts.py` is that prose *parsed*, covering all 52 codes, and
   `publish` both ships it and joins it onto every run as `host_barrel_in`,
   `host_cycling`, `host_platform`, `host_ammo` and `host_grains`. So the two
   biggest confounders in the dataset stop being locked inside a string:
 
   | attribute | coverage | values |
   | --- | ---: | --- |
-  | `host_cycling` | 1185 / 1188 runs | 583 manual, 602 self-loading |
-  | `host_barrel_in` | 1010 / 1188 runs | 5" to 27" |
-  | `host_platform` | 1187 / 1188 runs | bolt, AR, pistol, PCC, lever, rifle |
-  | `host_ammo` | 1173 / 1188 runs | 391 subsonic, 782 supersonic |
+  | `host_cycling` | 1182 / 1185 runs | 581 manual, 601 self-loading |
+  | `host_barrel_in` | 1076 / 1185 runs | 4" to 27" |
+  | `host_platform` | 1184 / 1185 runs | bolt, AR, pistol, PCC, lever, rifle |
+  | `host_ammo` | 1170 / 1185 runs | 390 subsonic, 780 supersonic |
 
   Cycling matters because TBAC's own FAQ says so: "suppressors shot on 5.56
   will never have their peak less than the SS crack because the action noise
@@ -380,7 +377,7 @@ python3 -m pytest
 
   Values are either stated in the report, or are facts about the named firearm
   — a Marlin 1895 is a lever action, a Volquartsen Summit is a bolt gun.
-  `barrel_source` records which: `report` for 1010 runs, `model` for 69 where
+  `barrel_source` records which: `report` for 1007 runs, `model` for 69 where
   the report omits a length but names a gun with one published spec (the Sig
   P322's 4", the MP5K's 4.5"). A stated length is a measurement of the gun
   that fired; a looked-up one assumes TBAC used the stock configuration, and

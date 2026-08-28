@@ -1495,8 +1495,8 @@ async function selectRun(index, { updateHash = true } = {}) {
     state.envelopes = null;
     state.wave.auto = state.wave.full = null;
     $('wave-hint').textContent =
-      'No waveforms for this run — 2026 is published as tables only, and a ' +
-      'handful of runs across the other years were never released.';
+      'No waveforms for this run — a handful of runs across the release sets ' +
+      'have no capture in the archive, either never recorded or set aside.';
     drawPlaceholder($('wave'), 'No waveforms released for this run');
     clearLegend($('wave-legend'));
     return;

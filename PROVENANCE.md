@@ -37,11 +37,12 @@ See [ATTRIBUTION.md](ATTRIBUTION.md) for the terms this data is used under.
 
 ### 2026
 
-Not released yet. The report page still shows `TBD` where the
-download link goes, so only the published table is imported.
-
+* file: `2026_SUMMIT_RELEASE_SET.tar.gz`
+* url: https://www.dropbox.com/scl/fi/j91yeyrv1lwcpzoxmdkqp/2026_SUMMIT_RELEASE_SET.tar.gz?rlkey=99bnrfz6av31gvet5ix780apc&dl=1
+* size: 6,138,150,313 bytes (6.14 GB)
+* sha256: `4c9e4320f2e76c62bc50be57be0323843abf491b0a8a26c872808144c89c9cff`
 * report: https://thunderbeastarms.com/sound/summit2026/
-* table: https://thunderbeastarms.com/sound/summit2026/HTML/all.csv
+* imported: 2026-08-28 06:37:22
 
 ## Summary tables
 
@@ -53,7 +54,7 @@ Small enough to track in git, so these are the copies in this repo.
 | 2023 | `summit2023/physical-specs.csv` | 4,333 | `3179fbfd974ffbd86f839e04b25fe9f7d32bbad7c419b779399ff73cd9c530bd` |
 | 2024 | `summit2024/all.csv` | 65,311 | `698422773b2ad5dce7bef8b8c6eb727deaba13ce79ae1994aa40dc556d712901` |
 | 2025 | `summit2025/all.csv` | 71,083 | `b730b2f26a4292dec6f4d065886728eb1f6b9c37ccf1087e907291db7d0debed` |
-| 2026 | `summit2026/all.csv` | 52,569 | `ac5e7224334449a909680cf5bc723915e684d476cd565effc02b4c55ce391530` |
+| 2026 | `summit2026/all.csv` | 51,931 | `3e42349fab671e5b798d4a382c1e0e3bf545d65b5dadb808cc7afd8514ebdcc7` |
 
 ## Verifying a copy
 
@@ -62,12 +63,13 @@ sha256sum -c <<'EOF'
 dc3b4ea1a7011de79cd2bebb34f37ae33670ff7c0b773a7b2165ca64a685f541  2023_SUMMIT_RELEASE_SET.tar.gz
 8e012778ec49dcad36b2526cabdb979edea8a5f6b073f9f3bb6c11e777bf298f  2024_SUMMIT_RELEASE_SET.tar.gz
 525f2edde8c4d046a7a9fd198b8c56092842b317a80d46b13eb7203dc24928a8  2025_SUMMIT_RELEASE_SET.tar.gz
+4c9e4320f2e76c62bc50be57be0323843abf491b0a8a26c872808144c89c9cff  2026_SUMMIT_RELEASE_SET.tar.gz
 EOF
 ```
 
 ## Hosting
 
-2023 is served by TBAC directly. 2024 and 2025 are Dropbox capability
+2023 is served by TBAC directly. 2024 onwards are Dropbox capability
 links: the `rlkey` and `st` query parameters are tokens, the `st` one
 is short-lived, and neither URL is a durable citation. The hashes above
 are what actually pins these files.

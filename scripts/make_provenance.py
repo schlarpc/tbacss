@@ -28,7 +28,10 @@ ARCHIVE_URLS = {
         "https://www.dropbox.com/scl/fi/yxxu6dgejp2e2g18wyuvo/"
         "2025_SUMMIT_RELEASE_SET.tar.gz?rlkey=n98408fdjv54rji0m4ulxxuv3&dl=1"
     ),
-    2026: None,  # still "TBD" on the report page
+    2026: (
+        "https://www.dropbox.com/scl/fi/j91yeyrv1lwcpzoxmdkqp/"
+        "2026_SUMMIT_RELEASE_SET.tar.gz?rlkey=99bnrfz6av31gvet5ix780apc&dl=1"
+    ),
 }
 SUMMARY_URL = "https://thunderbeastarms.com/sound/summit{year}/HTML/all.csv"
 
@@ -131,7 +134,7 @@ def main() -> int:
     out += [
         "## Hosting",
         "",
-        "2023 is served by TBAC directly. 2024 and 2025 are Dropbox capability",
+        "2023 is served by TBAC directly. 2024 onwards are Dropbox capability",
         "links: the `rlkey` and `st` query parameters are tokens, the `st` one",
         "is short-lived, and neither URL is a durable citation. The hashes above",
         "are what actually pins these files.",

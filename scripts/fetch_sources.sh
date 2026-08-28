@@ -51,15 +51,16 @@ for year in "${years[@]}"; do
 done
 
 if [[ "${1:-}" == "--archives" ]]; then
-    echo "==> release archives (this is ~21 GB)"
-    # 2023 is hosted by TBAC; 2024 and 2025 are on Dropbox. 2026 was still
-    # marked TBD on the report page as of this writing.
+    echo "==> release archives (this is ~27 GB)"
+    # 2023 is hosted by TBAC; 2024 onwards are on Dropbox.
     get "$base/summit2023/2023_SUMMIT_RELEASE_SET.tar.gz" \
         "$root/2023_SUMMIT_RELEASE_SET.tar.gz"
     curl -fsSL -C - -o "$root/2024_SUMMIT_RELEASE_SET.tar.gz" \
         "https://www.dropbox.com/scl/fi/x0rzms56e52nd2bpy53a8/2024_SUMMIT_RELEASE_SET.tar.gz?rlkey=3jjtikha3tkvrejcawju5nhz3&dl=1"
     curl -fsSL -C - -o "$root/2025_SUMMIT_RELEASE_SET.tar.gz" \
         "https://www.dropbox.com/scl/fi/yxxu6dgejp2e2g18wyuvo/2025_SUMMIT_RELEASE_SET.tar.gz?rlkey=n98408fdjv54rji0m4ulxxuv3&dl=1"
+    curl -fsSL -C - -o "$root/2026_SUMMIT_RELEASE_SET.tar.gz" \
+        "https://www.dropbox.com/scl/fi/j91yeyrv1lwcpzoxmdkqp/2026_SUMMIT_RELEASE_SET.tar.gz?rlkey=99bnrfz6av31gvet5ix780apc&dl=1"
 fi
 
 echo "done"
