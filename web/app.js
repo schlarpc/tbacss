@@ -13,11 +13,9 @@ import {
   paretoFront,
   fetchRunEnvelopes,
   fetchSamples,
-  impulse as cumulativeImpulse,
-  leq as runningLeq,
-  aWeightingCoefficients,
-  lfilter,
+  analyse,
   toDb,
+  LEQ_TRIGGER_PA,
 } from './tbacss.js';
 
 const $ = (id) => document.getElementById(id);
@@ -167,6 +165,26 @@ const state = {
   filtersOpen: false,
   zKey: null,
   view: { ...DEFAULT_VIEW_INIT },
+
+  /**
+   * The waveform card's own view state.
+   *
+   * `view` is the reader's zoom and holds until they clear it; `auto` is the
+   * framing the run was opened with. Keeping them apart is what lets a change
+   * of shot redraw without throwing away a zoom, while a change of *run* --
+   * whose shot arrives at a different millisecond -- reframes.
+   */
+  wave: {
+    view: null, // [t0, t1] ms, or null to use `auto`
+    auto: null, // [t0, t1] ms derived from the run's envelopes
+    full: null, // [t0, t1] ms, the whole stored window
+    hover: null, // ms under the cursor
+    pinned: null, // ms of a tapped or clicked readout
+    record: null, // full-rate samples and analysis for the selected shot
+    box: null, // plot rectangle of the last paint, for hit-testing
+    lastX: null, // where the readout was last summoned, for placing it
+    lastY: null,
+  },
 };
 
 /* ------------------------------------------------------------------ helpers */
@@ -1204,9 +1222,259 @@ function drawPlaceholder(canvas, message) {
   ctx.fillText(message, width / 2, height / 2);
 }
 
+const MIC_COLOR = { ML: '--series-1', MR: '--series-2', SE: '--series-3', 225: '--series-2' };
+
+/* ------------------------------------------------------------- wave framing
+ *
+ * The stored analysis window runs 1 ms to 125 ms, but the rig pre-triggers and
+ * every shot in the archive arrives between about 47 and 56 ms. Framing the
+ * whole window therefore spends two fifths of the plot on guaranteed silence
+ * and leaves the blast a handful of pixels wide. What is worth looking at is
+ * the arrival, the peak a millisecond or two behind it, and the trough seven
+ * to thirteen milliseconds after that -- so the card opens on that, and the
+ * reader zooms out to the tail if they want it.
+ */
+
+const VIEW_LEAD_MS = 1.5; // shown ahead of the first arrival
+const VIEW_SPAN_MS = 24; // holds the trough for ~95% of records; the rest widen on demand
+const MIN_SPAN_MS = 0.05; // ~13 samples at 262 kHz; past this there is nothing left to resolve
+const MARK_MARGIN_MS = 2; // breathing room when a view is widened to reach a marker
+
+/** [start, end] of one record, in ms. */
+function recordSpan(entry) {
+  const t0 = state.bundle.waveforms.window_start_s * 1000;
+  return [t0, t0 + entry.n * entry.dt * 1000];
+}
+
+/** The union of every record's span, in ms. Runs mix 99 ms and 124 ms windows. */
+function fullSpan(records) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const record of records) {
+    const [a, b] = recordSpan(record.entry);
+    lo = Math.min(lo, a);
+    hi = Math.max(hi, b);
+  }
+  return [lo, hi];
+}
+
+/**
+ * Where the shot starts in one record, in ms, judged from the overview
+ * envelope. The same 1 Pa trigger the published Leq search uses, at bucket
+ * resolution -- which is coarse, but framing a view does not need better. A
+ * record that never breaks 1 Pa (a very quiet can at the shooter's ear) falls
+ * back to a fraction of its own peak so the framing still lands on the event.
+ */
+function envelopeTrigger(record) {
+  const { values, buckets, entry } = record;
+  const [t0, t1] = recordSpan(entry);
+  const width = (t1 - t0) / buckets;
+  let peak = 0;
+  for (let b = 0; b < buckets; b++) peak = Math.max(peak, values[b * 2 + 1]);
+  if (!(peak > 0)) return null;
+  const threshold = Math.min(LEQ_TRIGGER_PA, peak * 0.2);
+  for (let b = 0; b < buckets; b++) if (values[b * 2 + 1] > threshold) return t0 + b * width;
+  return null;
+}
+
+/** Opening view for a run: from just before the earliest arrival across its mics. */
+function autoWindow(records) {
+  const [lo, hi] = fullSpan(records);
+  let first = Infinity;
+  for (const record of records) {
+    const t = envelopeTrigger(record);
+    if (t !== null) first = Math.min(first, t);
+  }
+  if (!Number.isFinite(first)) return [lo, hi];
+  const start = Math.max(lo, first - VIEW_LEAD_MS);
+  return [start, Math.min(hi, start + VIEW_SPAN_MS)];
+}
+
+const waveDomain = () => state.wave.view ?? state.wave.auto ?? [0, 1];
+
+/**
+ * Stretch the opening view to reach a figure that landed outside it.
+ *
+ * The trough sits 11 ms behind the shot for a median record but 29 ms behind
+ * the slowest, so no fixed span holds every one. Rather than leave a marker
+ * silently off the edge -- a plot that quietly omits the thing it is annotating
+ * is worse than one that never annotated -- the run's own framing grows to fit
+ * it. A view the reader set is theirs and is left alone.
+ */
+function widenAutoFor(times) {
+  if (state.wave.view !== null || !state.wave.auto) return;
+  let [lo, hi] = state.wave.auto;
+  for (const t of times) {
+    if (!Number.isFinite(t)) continue;
+    lo = Math.min(lo, t - MARK_MARGIN_MS);
+    hi = Math.max(hi, t + MARK_MARGIN_MS);
+  }
+  state.wave.auto = clampDomain([lo, hi]);
+}
+
+/** Hold a view inside the stored window, and refuse to zoom past the samples. */
+function clampDomain([t0, t1]) {
+  const [lo, hi] = state.wave.full ?? [t0, t1];
+  let span = Math.min(Math.max(t1 - t0, MIN_SPAN_MS), hi - lo);
+  let start = Math.min(Math.max(t0, lo), hi - span);
+  return [start, start + span];
+}
+
+/** Adopt a view, or `null` to fall back to the run's own framing. */
+function setWaveView(domain) {
+  const next = domain === null ? null : clampDomain(domain);
+  // Snapping back to exactly the auto window counts as not having zoomed, so
+  // the reset control goes away rather than lingering with nothing to undo.
+  state.wave.view = next;
+  $('wave-reset').hidden = next === null;
+  renderWave();
+  renderDerived();
+}
+
+/* --------------------------------------------------------- wave decimation
+ *
+ * Every trace is reduced to one [min, max] pair per pixel column before it is
+ * drawn. Min/max rather than every nth sample: a blast is a very short
+ * excursion inside a long quiet record, so stride-sampling 262 kHz onto 600
+ * pixels steps straight over the peak nearly every time. Keeping both extremes
+ * per column makes the drawn shape an honest bound on what is underneath it.
+ */
+
+/**
+ * Reduce a source of `count` elements spanning `[s0, s1]` ms to `cols` columns
+ * over `domain`. `lo(i)` and `hi(i)` read one element. Columns with no element
+ * under them are left unset, which is how a 99 ms record stops rather than
+ * being stretched across a 124 ms axis.
+ */
+function decimate(count, s0, s1, lo, hi, domain, cols) {
+  const outLo = new Float32Array(cols);
+  const outHi = new Float32Array(cols);
+  const seen = new Uint8Array(cols);
+  const width = (s1 - s0) / count;
+  const step = (domain[1] - domain[0]) / cols;
+  for (let c = 0; c < cols; c++) {
+    const a = domain[0] + c * step;
+    let i0 = Math.floor((a - s0) / width);
+    let i1 = Math.ceil((a + step - s0) / width);
+    if (i1 <= 0 || i0 >= count) continue;
+    i0 = Math.max(0, i0);
+    i1 = Math.min(count, Math.max(i1, i0 + 1));
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i = i0; i < i1; i++) {
+      // A derived curve can be undefined in places -- a running level is NaN
+      // wherever the RMS is exactly zero -- so a gap has to stay a gap rather
+      // than poisoning the column's extremes.
+      const l = lo(i);
+      const h = hi(i);
+      if (l < min) min = l;
+      if (h > max) max = h;
+    }
+    if (!Number.isFinite(min) || !Number.isFinite(max)) continue;
+    outLo[c] = min;
+    outHi[c] = max;
+    seen[c] = 1;
+  }
+  return { lo: outLo, hi: outHi, seen };
+}
+
+function envelopeColumns(record, domain, cols) {
+  const { values, buckets, entry } = record;
+  const [s0, s1] = recordSpan(entry);
+  return decimate(
+    buckets, s0, s1, (i) => values[i * 2], (i) => values[i * 2 + 1], domain, cols,
+  );
+}
+
+function sampleColumns(values, entry, domain, cols) {
+  const [s0, s1] = recordSpan(entry);
+  return decimate(values.length, s0, s1, (i) => values[i], (i) => values[i], domain, cols);
+}
+
+/** The across-shot min/max for one mic: the spread, as one shape. */
+function micBand(group, domain, cols) {
+  const lo = new Float32Array(cols).fill(Infinity);
+  const hi = new Float32Array(cols).fill(-Infinity);
+  const seen = new Uint8Array(cols);
+  for (const record of group) {
+    const part = envelopeColumns(record, domain, cols);
+    for (let c = 0; c < cols; c++) {
+      if (!part.seen[c]) continue;
+      if (part.lo[c] < lo[c]) lo[c] = part.lo[c];
+      if (part.hi[c] > hi[c]) hi[c] = part.hi[c];
+      seen[c] = 1;
+    }
+  }
+  return { lo, hi, seen };
+}
+
+/** Fill between `lo` and `hi`, breaking the path wherever the data stops. */
+function fillBand(ctx, band, cols, py, colX) {
+  for (let c = 0; c < cols; ) {
+    if (!band.seen[c]) { c++; continue; }
+    let end = c;
+    while (end < cols && band.seen[end]) end++;
+    ctx.beginPath();
+    for (let i = c; i < end; i++) ctx.lineTo(colX(i), py(band.hi[i]));
+    for (let i = end - 1; i >= c; i--) ctx.lineTo(colX(i), py(band.lo[i]));
+    ctx.closePath();
+    ctx.fill();
+    c = end;
+  }
+}
+
+/**
+ * Draw a decimated trace: one continuous path that walks each column's
+ * extremes.
+ *
+ * Continuous rather than a separate vertical per column, because detached
+ * verticals read as a bar chart of unrelated values. Threading them keeps the
+ * shape of the signal at any zoom, and once the reader is in far enough that a
+ * column holds one sample the same path is simply the waveform.
+ */
+function strokeColumns(ctx, band, cols, py, colX) {
+  ctx.beginPath();
+  let open = false;
+  for (let c = 0; c < cols; c++) {
+    if (!band.seen[c]) { open = false; continue; }
+    const x = colX(c);
+    const top = py(band.hi[c]);
+    const bottom = py(band.lo[c]);
+    if (open) ctx.lineTo(x, top);
+    else { ctx.moveTo(x, top); open = true; }
+    // A column whose extremes coincide would stroke nothing, so give it a hair.
+    ctx.lineTo(x, bottom === top ? bottom + 0.6 : bottom);
+  }
+  ctx.stroke();
+}
+
+/** One edge of a band: a plain line through a single value per column. */
+function strokeSeries(ctx, values, seen, cols, py, colX) {
+  ctx.beginPath();
+  let open = false;
+  for (let c = 0; c < cols; c++) {
+    if (!seen[c]) { open = false; continue; }
+    const x = colX(c);
+    const y = py(values[c]);
+    if (open) ctx.lineTo(x, y);
+    else { ctx.moveTo(x, y); open = true; }
+  }
+  ctx.stroke();
+}
+
+/* -------------------------------------------------------------- wave render */
+
 async function selectRun(index, { updateHash = true } = {}) {
   state.selectedRun = index;
   state.selectedWaveform = null;
+  state.wave.record = null;
+  // A new run arrives at a different millisecond, so a zoom carried over from
+  // the last one would be pointing at the wrong part of the record.
+  state.wave.view = null;
+  state.wave.hover = null;
+  state.wave.pinned = null;
+  dismissWaveTip();
+  $('wave-reset').hidden = true;
   // Deep link, so a particular run is shareable and reloadable.
   if (updateHash) {
     const id = state.bundle.catalog.ids[index];
@@ -1225,11 +1493,12 @@ async function selectRun(index, { updateHash = true } = {}) {
 
   if (!catalog.columns.waveform_count[index]) {
     state.envelopes = null;
+    state.wave.auto = state.wave.full = null;
     $('wave-hint').textContent =
       'No waveforms for this run — 2026 is published as tables only, and a ' +
       'handful of runs across the other years were never released.';
     drawPlaceholder($('wave'), 'No waveforms released for this run');
-    $('wave-legend').innerHTML = '';
+    clearLegend($('wave-legend'));
     return;
   }
 
@@ -1241,42 +1510,53 @@ async function selectRun(index, { updateHash = true } = {}) {
     $('wave-hint').textContent = `Could not load waveforms: ${error.message}`;
     return;
   }
-  const shots = new Set(state.envelopes.map((e) => e.entry.shot));
-  $('wave-hint').textContent =
-    `${state.envelopes.length} records · ${shots.size} shots × ${
-      new Set(state.envelopes.map((e) => e.entry.mic)).size
-    } mics. Min/max envelope over 2048 buckets; pick a shot for full rate.`;
-  renderEnvelopes();
+  state.wave.full = fullSpan(state.envelopes);
+  state.wave.auto = autoWindow(state.envelopes);
+  describeWave();
+  renderWave();
   renderShotButtons();
 }
 
-const MIC_COLOR = { ML: '--series-1', MR: '--series-2', SE: '--series-3', 225: '--series-2' };
+/** The line under the title: what is on screen, and how to move it. */
+function describeWave() {
+  const records = state.envelopes;
+  if (!records) return;
+  const selected = state.wave.record;
+  const [t0, t1] = waveDomain();
+  const [f0, f1] = state.wave.full;
+  const framing = `${t0.toFixed(1)}–${t1.toFixed(1)} ms of the stored ` +
+    `${f0.toFixed(0)}–${f1.toFixed(0)} ms window`;
 
-function renderEnvelopes() {
+  if (selected) {
+    const { entry, analysis } = selected;
+    $('wave-hint').textContent =
+      `${entry.mic} shot ${entry.shot} at full rate, ${entry.n.toLocaleString()} samples · ` +
+      `peak ${analysis.peak_pa.toFixed(1)} Pa (${analysis.peak_db.toFixed(2)} dB) · ` +
+      `impulse ${analysis.impulse_pa_ms.toFixed(2)} Pa·ms · ` +
+      `Leq(10ms) ${analysis.peak_leq10ms_dba.toFixed(2)} dBA. ` +
+      `Showing ${framing}.` +
+      (entry.overload ? ' DAQ flagged an overload on this record.' : '');
+    return;
+  }
+  const shots = new Set(records.map((e) => e.entry.shot)).size;
+  const mics = new Set(records.map((e) => e.entry.mic)).size;
+  $('wave-hint').textContent =
+    `${shots} shots × ${mics} mics as a min/max band per mic — the width of a ` +
+    `band is the shot-to-shot spread. Showing ${framing}; scroll or pinch to ` +
+    `zoom, drag to pan, pick a shot below for its full-rate trace.`;
+}
+
+function renderWave() {
   const canvas = $('wave');
   const { ctx, width, height } = prepare(canvas);
   const records = state.envelopes;
   if (!records || !records.length) return;
 
-  let lo = Infinity;
-  let hi = -Infinity;
-  for (const record of records) {
-    for (const value of record.values) {
-      if (value < lo) lo = value;
-      if (value > hi) hi = value;
-    }
-  }
-  const span = hi - lo || 1;
+  const domain = waveDomain();
   const box = { left: 54, top: 20, right: width - 42, bottom: height - 34 };
-  const buckets = records[0].buckets;
-  const t0 = state.bundle.waveforms.window_start_s * 1000;
-  const dt = records[0].entry.dt * 1000;
-  const tEnd = t0 + records[0].entry.n * dt;
-
-  const { px, py } = axes(
-    ctx, box, [t0, tEnd], [lo - span * 0.05, hi + span * 0.05],
-    'time, ms', 'pressure, Pa', 0, 0,
-  );
+  const cols = Math.max(1, Math.round(box.right - box.left));
+  const colX = (c) => box.left + ((c + 0.5) / cols) * (box.right - box.left);
+  state.wave.box = box;
 
   const byMic = new Map();
   for (const record of records) {
@@ -1284,53 +1564,412 @@ function renderEnvelopes() {
     byMic.get(record.entry.mic).push(record);
   }
 
-  for (const [mic, group] of byMic) {
-    ctx.strokeStyle = css(MIC_COLOR[mic] ?? '--series-1');
-    ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.55;
-    for (const record of group) {
-      ctx.beginPath();
-      for (let b = 0; b < buckets; b++) {
-        const x = px(t0 + ((b + 0.5) / buckets) * (tEnd - t0));
-        ctx.moveTo(x, py(record.values[b * 2]));
-        ctx.lineTo(x, py(record.values[b * 2 + 1]));
-      }
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
+  const bands = new Map();
+  for (const [mic, group] of byMic) bands.set(mic, micBand(group, domain, cols));
 
-    // Direct label at the trace's right edge. Light-mode aqua is below 3:1 on
-    // the surface, so identity never rests on colour alone.
-    const last = group[0];
-    let peak = -Infinity;
-    for (let b = 0; b < buckets; b++) peak = Math.max(peak, last.values[b * 2 + 1]);
-    ctx.fillStyle = css('--text-secondary');
-    ctx.font = '11px system-ui, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(mic, box.right + 6, py(peak));
+  const selected = state.wave.record;
+  const trace = selected
+    ? sampleColumns(selected.values, selected.entry, domain, cols)
+    : null;
+
+  // Scale to what is on screen, not to the whole record. Keeping the full
+  // record's range would undo the zoom: the peak is 20x the rest of the trace,
+  // so anything but the peak stays pressed flat against the axis.
+  let lo = Infinity;
+  let hi = -Infinity;
+  const consider = (band) => {
+    for (let c = 0; c < cols; c++) {
+      if (!band.seen[c]) continue;
+      if (band.lo[c] < lo) lo = band.lo[c];
+      if (band.hi[c] > hi) hi = band.hi[c];
+    }
+  };
+  for (const band of bands.values()) consider(band);
+  if (trace) consider(trace);
+  if (!Number.isFinite(lo)) { lo = -1; hi = 1; }
+  const span = hi - lo || 1;
+
+  const { px, py } = axes(
+    ctx, box, domain, [lo - span * 0.06, hi + span * 0.06],
+    'time, ms', 'pressure, Pa', domain[1] - domain[0] < 5 ? 1 : 0, 0,
+  );
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+  ctx.clip();
+
+  for (const [mic, band] of bands) {
+    const colour = css(MIC_COLOR[mic] ?? '--series-1');
+    // A selected shot owns the foreground; its neighbours drop back to context.
+    // Fifteen traces at equal weight is what made this a block of colour.
+    ctx.globalAlpha = selected ? 0.11 : 0.32;
+    ctx.fillStyle = colour;
+    fillBand(ctx, band, cols, py, colX);
+    // The band's edges get an outline only when they are the subject. Eight
+    // hundred columns of noisy edge at any real opacity is a wall, not a line.
+    if (!selected) {
+      ctx.globalAlpha = 0.7;
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = 1;
+      strokeSeries(ctx, band.hi, band.seen, cols, py, colX);
+      strokeSeries(ctx, band.lo, band.seen, cols, py, colX);
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  if (trace) {
+    ctx.strokeStyle = css(MIC_COLOR[selected.entry.mic] ?? '--series-1');
+    ctx.lineWidth = 1.4;
+    strokeColumns(ctx, trace, cols, py, colX);
   }
 
-  const legend = $('wave-legend');
-  legend.textContent = '';
-  for (const mic of byMic.keys()) {
+  drawWaveCrosshair(ctx, box, px);
+  ctx.restore();
+
+  // Direct labels at the right edge: light-mode aqua is under 3:1 on the
+  // surface, so identity never rests on colour alone.
+  ctx.fillStyle = css('--text-secondary');
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const taken = [];
+  for (const [mic, band] of bands) {
+    let best = -Infinity;
+    for (let c = 0; c < cols; c++) if (band.seen[c] && band.hi[c] > best) best = band.hi[c];
+    if (!Number.isFinite(best)) continue;
+    // Nudge apart so two quiet mics do not print on top of each other.
+    let y = Math.min(Math.max(py(best), box.top + 6), box.bottom - 6);
+    while (taken.some((other) => Math.abs(other - y) < 13)) y += 13;
+    taken.push(y);
+    ctx.fillText(mic, box.right + 6, y);
+  }
+
+  const legend = clearLegend($('wave-legend'));
+  const reset = $('wave-reset');
+  for (const mic of bands.keys()) {
     const item = document.createElement('span');
     item.className = 'item';
     const swatch = document.createElement('span');
     swatch.className = 'swatch';
     swatch.style.background = `var(${MIC_COLOR[mic] ?? '--series-1'})`;
+    if (selected && selected.entry.mic !== mic) item.classList.add('dim');
     item.append(swatch, document.createTextNode(mic));
-    legend.append(item);
+    // The reset control lives in the legend and stays at its end, so swatches
+    // go in ahead of it rather than being appended after.
+    legend.insertBefore(item, reset);
   }
 }
+
+/** Empty a legend of its swatches without evicting the controls parked in it. */
+function clearLegend(legend) {
+  for (const item of [...legend.querySelectorAll('.item')]) item.remove();
+  return legend;
+}
+
+function drawWaveCrosshair(ctx, box, px) {
+  const t = state.wave.hover ?? state.wave.pinned;
+  if (t === null || t === undefined) return;
+  const x = Math.round(px(t)) + 0.5;
+  if (x < box.left || x > box.right) return;
+  ctx.save();
+  ctx.strokeStyle = css('--text-muted');
+  ctx.globalAlpha = 0.65;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(x, box.top);
+  ctx.lineTo(x, box.bottom);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* ------------------------------------------------------------- wave readout */
+
+/** Sample index of `t` ms within a record, or null if `t` is outside it. */
+function indexAt(entry, t) {
+  const [s0, s1] = recordSpan(entry);
+  if (t < s0 || t > s1) return null;
+  const i = Math.round((t - s0) / (entry.dt * 1000));
+  return i >= 0 && i < entry.n ? i : null;
+}
+
+function showWaveTip(t, pinned) {
+  const tip = $('wave-tip');
+  const box = state.wave.box;
+  if (!box || !state.envelopes) return;
+
+  tip.textContent = '';
+  tip.classList.toggle('pinned', pinned);
+  if (pinned) {
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'tip-close';
+    close.setAttribute('aria-label', 'Dismiss readout');
+    close.textContent = '×';
+    tip.append(close);
+  }
+
+  const title = document.createElement('strong');
+  title.textContent = `${t.toFixed(3)} ms`;
+  tip.append(title);
+
+  const selected = state.wave.record;
+  const trigger = selected?.analysis.triggered
+    ? recordSpan(selected.entry)[0] + selected.analysis.leqStart * selected.entry.dt * 1000
+    : null;
+  if (trigger !== null) {
+    const rel = document.createElement('div');
+    rel.className = 'dim';
+    const d = t - trigger;
+    rel.textContent = `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(3)} ms from shot start`;
+    tip.append(rel);
+  }
+
+  if (selected) {
+    const i = indexAt(selected.entry, t);
+    const line = document.createElement('div');
+    line.append(document.createTextNode(`${selected.entry.mic} shot ${selected.entry.shot}: `));
+    const value = document.createElement('strong');
+    if (i === null) {
+      value.textContent = '—';
+    } else {
+      const pa = selected.values[i];
+      value.textContent = `${pa.toFixed(2)} Pa`;
+    }
+    line.append(value);
+    if (i !== null) {
+      const level = document.createElement('span');
+      level.className = 'dim';
+      const pa = Math.abs(selected.values[i]);
+      level.textContent = pa > 0 ? ` (${toDb(pa).toFixed(1)} dB)` : '';
+      line.append(level);
+    }
+    tip.append(line);
+  }
+
+  // Band readouts: the extremes across that mic's shots at this instant, which
+  // is the thing the band is drawing.
+  const byMic = new Map();
+  for (const record of state.envelopes) {
+    if (!byMic.has(record.entry.mic)) byMic.set(record.entry.mic, []);
+    byMic.get(record.entry.mic).push(record);
+  }
+  for (const [mic, group] of byMic) {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const record of group) {
+      const [s0, s1] = recordSpan(record.entry);
+      const b = Math.floor(((t - s0) / (s1 - s0)) * record.buckets);
+      if (b < 0 || b >= record.buckets) continue;
+      lo = Math.min(lo, record.values[b * 2]);
+      hi = Math.max(hi, record.values[b * 2 + 1]);
+    }
+    if (!Number.isFinite(lo)) continue;
+    const line = document.createElement('div');
+    line.className = 'dim';
+    line.textContent =
+      `${mic}: ${lo.toFixed(1)} … ${hi.toFixed(1)} Pa over ${group.length} shot` +
+      (group.length === 1 ? '' : 's');
+    tip.append(line);
+  }
+
+  tip.hidden = false;
+  const wrap = $('wave').parentElement.getBoundingClientRect();
+  const x = state.wave.lastX ?? box.left;
+  const y = state.wave.lastY ?? box.top;
+  tip.style.left = `${Math.max(4, Math.min(x + 14, wrap.width - tip.offsetWidth - 6))}px`;
+  tip.style.top = `${Math.max(4, Math.min(y - 10, wrap.height - tip.offsetHeight - 4))}px`;
+}
+
+function dismissWaveTip() {
+  state.wave.pinned = null;
+  const tip = $('wave-tip');
+  tip.hidden = true;
+  tip.classList.remove('pinned');
+}
+
+/* --------------------------------------------------------- wave interaction */
+
+/** Time in ms under a pointer, or null if it is outside the plot. */
+function waveTimeAt(event) {
+  const box = state.wave.box;
+  if (!box) return null;
+  const rect = $('wave').getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  state.wave.lastX = x;
+  state.wave.lastY = event.clientY - rect.top;
+  if (x < box.left || x > box.right) return null;
+  const [t0, t1] = waveDomain();
+  return t0 + ((x - box.left) / (box.right - box.left)) * (t1 - t0);
+}
+
+/** Zoom by `factor` about `anchor` ms, so whatever is under the cursor stays put. */
+function zoomWave(factor, anchor) {
+  const [t0, t1] = waveDomain();
+  const at = anchor ?? (t0 + t1) / 2;
+  setWaveView([at - (at - t0) * factor, at + (t1 - at) * factor]);
+}
+
+function bindWave() {
+  const canvas = $('wave');
+  const tip = $('wave-tip');
+  const pointers = new Map();
+  let dragFrom = null; // {x, domain} while panning
+  let dragged = false;
+  let pinchFrom = null; // {distance, domain} while pinching
+
+  tip.addEventListener('click', (event) => {
+    if (!event.target.closest('.tip-close')) return;
+    dismissWaveTip();
+    renderWave();
+  });
+
+  $('wave-reset').addEventListener('click', () => {
+    setWaveView(null);
+    describeWave();
+  });
+
+  canvas.addEventListener('pointerdown', (event) => {
+    // Nothing loaded means nothing to pan, zoom or read out; the placeholder is
+    // not a plot and `state.wave.box` would be whichever run was last drawn.
+    if (!state.envelopes) return;
+    pointers.set(event.pointerId, event);
+    canvas.setPointerCapture(event.pointerId);
+    dragged = false;
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinchFrom = { distance: Math.abs(a.clientX - b.clientX) || 1, domain: waveDomain() };
+      dragFrom = null;
+    } else if (pointers.size === 1) {
+      dragFrom = { x: event.clientX, domain: waveDomain() };
+    }
+  });
+
+  canvas.addEventListener('pointermove', (event) => {
+    if (!state.envelopes) return;
+    if (pointers.has(event.pointerId)) pointers.set(event.pointerId, event);
+
+    if (pinchFrom && pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const distance = Math.abs(a.clientX - b.clientX) || 1;
+      const [t0, t1] = pinchFrom.domain;
+      const mid = (t0 + t1) / 2;
+      const half = ((t1 - t0) / 2) * (pinchFrom.distance / distance);
+      dragged = true;
+      setWaveView([mid - half, mid + half]);
+      return;
+    }
+
+    if (dragFrom) {
+      const box = state.wave.box;
+      const [t0, t1] = dragFrom.domain;
+      const shift = ((dragFrom.x - event.clientX) / (box.right - box.left)) * (t1 - t0);
+      if (Math.abs(dragFrom.x - event.clientX) > 3) dragged = true;
+      if (dragged) {
+        setWaveView([t0 + shift, t1 + shift]);
+        describeWave();
+      }
+      return;
+    }
+
+    // Hover has no meaning on touch, where the finger is the thing being
+    // pointed with; a tap pins instead.
+    if (event.pointerType === 'touch') return;
+    const t = waveTimeAt(event);
+    state.wave.hover = t;
+    if (t !== null) showWaveTip(t, state.wave.pinned !== null);
+    else if (state.wave.pinned !== null) showWaveTip(state.wave.pinned, true);
+    else tip.hidden = true;
+    renderWave();
+  });
+
+  const release = (event) => {
+    pointers.delete(event.pointerId);
+    if (pointers.size < 2) pinchFrom = null;
+    if (pointers.size === 0) {
+      // A drag is a pan, not a pick: only a still pointer pins a readout.
+      if (!dragged) {
+        const t = waveTimeAt(event);
+        if (t === null) {
+          dismissWaveTip();
+        } else {
+          state.wave.pinned = t;
+          showWaveTip(t, true);
+        }
+        renderWave();
+      }
+      dragFrom = null;
+    }
+  };
+  canvas.addEventListener('pointerup', release);
+  canvas.addEventListener('pointercancel', release);
+
+  canvas.addEventListener('pointerleave', (event) => {
+    if (event.pointerType === 'touch' || dragFrom) return;
+    state.wave.hover = null;
+    if (state.wave.pinned !== null) showWaveTip(state.wave.pinned, true);
+    else tip.hidden = true;
+    renderWave();
+  });
+
+  canvas.addEventListener(
+    'wheel',
+    (event) => {
+      if (!state.envelopes) return;
+      event.preventDefault();
+      zoomWave(Math.exp(event.deltaY * 0.002), waveTimeAt(event));
+      describeWave();
+    },
+    { passive: false },
+  );
+
+  canvas.addEventListener('dblclick', () => {
+    setWaveView(null);
+    describeWave();
+  });
+
+  // Keyboard equivalents, because zoom that only answers to a wheel or two
+  // fingers is zoom that some readers do not have.
+  canvas.tabIndex = 0;
+  canvas.addEventListener('keydown', (event) => {
+    if (!state.envelopes || !state.wave.full) return;
+    const [t0, t1] = waveDomain();
+    const step = (t1 - t0) * 0.2;
+    const moves = {
+      ArrowLeft: () => setWaveView([t0 - step, t1 - step]),
+      ArrowRight: () => setWaveView([t0 + step, t1 + step]),
+      '+': () => zoomWave(1 / 1.4, null),
+      '=': () => zoomWave(1 / 1.4, null),
+      '-': () => zoomWave(1.4, null),
+      Escape: () => { dismissWaveTip(); setWaveView(null); },
+    };
+    const move = moves[event.key];
+    if (!move) return;
+    event.preventDefault();
+    move();
+    describeWave();
+  });
+}
+
+/* ---------------------------------------------------------------- shot picks */
 
 function renderShotButtons() {
   const host = $('shots');
   host.innerHTML = '';
+
+  // A way back to the overview. Without it, picking a shot was a one-way door:
+  // nothing on the card returned to the all-shots view.
+  const all = document.createElement('button');
+  all.type = 'button';
+  all.textContent = 'all shots';
+  all.setAttribute('aria-pressed', String(state.selectedWaveform === null));
+  all.addEventListener('click', () => clearFullRate());
+  host.append(all);
+
   const seen = new Map();
   for (const record of state.envelopes) {
-    const key = `${record.entry.mic}/${record.entry.shot}`;
-    seen.set(key, record.entry);
+    seen.set(`${record.entry.mic}/${record.entry.shot}`, record.entry);
   }
   for (const [key, entry] of seen) {
     const button = document.createElement('button');
@@ -1342,6 +1981,18 @@ function renderShotButtons() {
   }
 }
 
+/** Back to the band view, keeping whatever zoom the reader had set. */
+function clearFullRate() {
+  state.selectedWaveform = null;
+  state.wave.record = null;
+  $('derived').hidden = true;
+  const run = state.bundle.catalog.ids[state.selectedRun];
+  history.replaceState(null, '', `#run=${run}`);
+  renderShotButtons();
+  describeWave();
+  renderWave();
+}
+
 async function loadFullRate(entry, { updateHash = true } = {}) {
   state.selectedWaveform = entry.id;
   renderShotButtons();
@@ -1350,58 +2001,176 @@ async function loadFullRate(entry, { updateHash = true } = {}) {
     history.replaceState(null, '', `#run=${run}&shot=${entry.id}`);
   }
   const { values, dt } = await fetchSamples(state.bundle, entry.id);
-  const rate = 1 / dt;
-  const t0 = state.bundle.waveforms.window_start_s * 1000;
+  // Raced ahead: the reader picked something else while this was in flight.
+  if (state.selectedWaveform !== entry.id) return;
 
-  // Derived here, not published: a cumulative trapezoid and a six-coefficient
-  // IIR are cheap, and computing them client-side keeps the window editable.
-  const integral = cumulativeImpulse(values, dt);
-  const [b, a] = aWeightingCoefficients(rate);
-  const weighted = lfilter(b, a, values);
-  const running = runningLeq(weighted, rate);
+  // Derived here, not published: the same analysis `tbacss.analysis` runs, so
+  // the curves and the figures marked on them are the published ones.
+  const analysis = analyse(values, dt);
+  state.wave.record = { entry, values, dt, analysis };
+
+  const [s0] = recordSpan(entry);
+  const at = (i) => s0 + i * dt * 1000;
+  widenAutoFor([at(analysis.trough), at(analysis.impulseIndex), at(analysis.leqIndex)]);
 
   $('derived').hidden = false;
-  drawSeries($('impulse'), values.length, t0, dt * 1000, integral, 'impulse, Pa·ms', '--series-1');
-  const levels = new Float64Array(running.length);
-  for (let i = 0; i < running.length; i++) {
-    levels[i] = running[i] > 0 ? toDb(running[i], P0) : 0;
-  }
-  drawSeries($('leq'), values.length, t0, dt * 1000, levels, 'Leq(10ms), dBA', '--series-3');
-
-  const peak = Math.max(...values);
-  $('wave-hint').textContent =
-    `${entry.mic} shot ${entry.shot}: ${values.length.toLocaleString()} samples at full rate, ` +
-    `peak ${peak.toFixed(2)} Pa (${toDb(peak, P0).toFixed(2)} dB).` +
-    (entry.overload ? ' DAQ flagged an overload on this record.' : '');
+  describeWave();
+  renderWave();
+  renderDerived();
 }
 
-function drawSeries(canvas, count, t0, stepMs, values, label, colorVar) {
+/* -------------------------------------------------------------- derived plots */
+
+/**
+ * One curve on the shared time axis, with the region and the instant that a
+ * published figure was taken from marked on it.
+ */
+function drawCurve(canvas, { values, entry, label, colorVar, digits = 0, shade, marks = [] }) {
   const { ctx, width, height } = prepare(canvas);
+  const domain = waveDomain();
+  const box = { left: 54, top: 18, right: width - 42, bottom: height - 30 };
+  const cols = Math.max(1, Math.round(box.right - box.left));
+  const colX = (c) => box.left + ((c + 0.5) / cols) * (box.right - box.left);
+  const band = sampleColumns(values, entry, domain, cols);
+
   let lo = Infinity;
   let hi = -Infinity;
-  for (const value of values) {
-    if (value < lo) lo = value;
-    if (value > hi) hi = value;
+  for (let c = 0; c < cols; c++) {
+    if (!band.seen[c]) continue;
+    if (band.lo[c] < lo) lo = band.lo[c];
+    if (band.hi[c] > hi) hi = band.hi[c];
   }
+  if (!Number.isFinite(lo)) { lo = 0; hi = 1; }
   const span = hi - lo || 1;
-  const box = { left: 54, top: 18, right: width - 12, bottom: height - 30 };
+
   const { px, py } = axes(
-    ctx, box, [t0, t0 + count * stepMs], [lo - span * 0.05, hi + span * 0.05],
-    'time, ms', label, 0, 0,
+    ctx, box, domain, [lo - span * 0.08, hi + span * 0.08],
+    'time, ms', label, domain[1] - domain[0] < 5 ? 1 : 0, digits,
   );
 
+  ctx.save();
   ctx.beginPath();
-  ctx.strokeStyle = css(colorVar);
-  ctx.lineWidth = 2;
-  ctx.lineJoin = 'round';
-  const stride = Math.max(1, Math.floor(count / (box.right - box.left) / 2));
-  for (let i = 0; i < count; i += stride) {
-    const x = px(t0 + i * stepMs);
-    const y = py(values[i]);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+  ctx.rect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+  ctx.clip();
+
+  if (shade) {
+    ctx.fillStyle = css(colorVar);
+    ctx.globalAlpha = 0.1;
+    const a = Math.max(px(shade.from), box.left);
+    const b = Math.min(px(shade.to), box.right);
+    if (b > a) ctx.fillRect(a, box.top, b - a, box.bottom - box.top);
+    ctx.globalAlpha = 1;
   }
-  ctx.stroke();
+
+  ctx.strokeStyle = css(colorVar);
+  ctx.lineWidth = 1.6;
+  ctx.lineJoin = 'round';
+  strokeColumns(ctx, band, cols, py, colX);
+  ctx.restore();
+
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.textBaseline = 'middle';
+  for (const mark of marks) {
+    const raw = px(mark.t);
+    // A marker the reader has zoomed past is pulled to the edge and flagged
+    // rather than dropped: silently omitting it would read as "no such point".
+    const offLeft = raw < box.left;
+    const offRight = raw > box.right;
+    const off = offLeft || offRight;
+    const x = Math.min(Math.max(raw, box.left), box.right);
+    const y = Math.min(Math.max(py(mark.v), box.top + 4), box.bottom - 4);
+
+    if (!off) {
+      ctx.save();
+      ctx.strokeStyle = css('--text-muted');
+      ctx.setLineDash([2, 3]);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(Math.round(x) + 0.5, box.top);
+      ctx.lineTo(Math.round(x) + 0.5, box.bottom);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Off-screen markers get the label but no dot: a dot pinned to the edge
+    // would claim a position on the curve that is not where the figure was
+    // taken from. The time in the label says where that actually was.
+    if (!off) {
+      ctx.fillStyle = css(colorVar);
+      ctx.beginPath();
+      ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const text = off
+      ? `${offLeft ? '‹ ' : ''}${mark.text} at ${mark.t.toFixed(1)} ms${offRight ? ' ›' : ''}`
+      : mark.text;
+    // Flip the label inboard near the right edge so it is never clipped.
+    const room = box.right - x;
+    ctx.textAlign = room < ctx.measureText(text).width + 12 ? 'right' : 'left';
+    haloText(ctx, text, x + (ctx.textAlign === 'right' ? -7 : 7), y);
+  }
+}
+
+function renderDerived() {
+  const selected = state.wave.record;
+  if (!selected || $('derived').hidden) return;
+  const { entry, values, dt, analysis } = selected;
+  const [s0] = recordSpan(entry);
+  const stepMs = dt * 1000;
+  const at = (i) => s0 + i * stepMs;
+
+  drawCurve($('impulse'), {
+    values: analysis.integral,
+    entry,
+    label: 'cumulative impulse, Pa·ms',
+    colorVar: '--series-1',
+    digits: 0,
+    // The published impulse is not the whole integral, it is the largest value
+    // the integral reaches before the trough. Shading that stretch and marking
+    // its maximum is what turns a wandering curve into the number it explains.
+    // From the shot rather than from the start of the capture: the fifty
+    // milliseconds of pre-trigger silence contribute nothing to the integral
+    // and shading them says the opposite.
+    shade: {
+      from: at(analysis.triggered ? analysis.leqStart : 0),
+      to: at(analysis.trough),
+    },
+    marks: [
+      {
+        t: at(analysis.impulseIndex),
+        v: analysis.integral[analysis.impulseIndex],
+        text: `impulse ${analysis.impulse_pa_ms.toFixed(2)} Pa·ms`,
+      },
+      {
+        t: at(analysis.trough),
+        v: analysis.integral[analysis.trough],
+        text: 'trough',
+      },
+    ],
+  });
+
+  const levels = new Float64Array(analysis.running.length);
+  for (let i = 0; i < levels.length; i++) {
+    levels[i] = analysis.running[i] > 0 ? toDb(analysis.running[i], P0) : NaN;
+  }
+  drawCurve($('leq'), {
+    values: levels,
+    entry,
+    label: 'Leq(10ms), dBA',
+    colorVar: '--series-3',
+    digits: 0,
+    shade: analysis.triggered
+      ? { from: at(analysis.leqStart), to: at(analysis.leqStop) }
+      : null,
+    marks: [
+      {
+        t: at(analysis.leqIndex),
+        v: levels[analysis.leqIndex],
+        text: `peak ${analysis.peak_leq10ms_dba.toFixed(2)} dBA`,
+      },
+    ],
+  });
 }
 
 /* --------------------------------------------------------------------- boot */
@@ -1413,8 +2182,15 @@ function drawSeries(canvas, count, t0, stepMs, values, label, colorVar) {
 /** Repaint every canvas; they read colours and sizes at paint time. */
 function redraw() {
   renderScatter();
-  if (state.envelopes) renderEnvelopes();
-  else drawPlaceholder($('wave'), 'Pick a run from the chart or table');
+  if (state.envelopes) {
+    // Column count follows the canvas width, so a resize really does have to
+    // re-decimate rather than rescale what was already drawn.
+    renderWave();
+    renderDerived();
+    describeWave();
+  } else {
+    drawPlaceholder($('wave'), 'Pick a run from the chart or table');
+  }
 }
 
 function applyTheme(theme) {
@@ -1600,6 +2376,7 @@ async function main() {
   fillAxisMenus();
   bindRotation();
   bindScatter();
+  bindWave();
 
   $('frontier-first').addEventListener('change', (event) => {
     state.frontierFirst = event.target.checked;

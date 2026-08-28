@@ -484,47 +484,97 @@ export function lfilter(b, a, x) {
  * Running RMS over a rectangular window of `tau` seconds, matching TBAC's
  * `Leq_fast.m`. A prefix-sum of squares gives the same answer as their FFT
  * convolution without needing an FFT.
+ *
+ * `Leq_fast.m` convolves in the frequency domain, which makes the sum
+ * *circular*: the first `tau` seconds average in samples from the tail of the
+ * record. The prefix sum is seeded to match rather than ramping up from an
+ * empty window, because a ramp is not a level — divide a partial sum by the
+ * full width and the opening 10 ms reads as a rise from 0 dB to ambient that
+ * no microphone ever heard. The peak search happens tens of milliseconds
+ * later either way, so this changes no published figure; it only stops the
+ * plotted curve from opening with an artefact.
  */
 export function leq(samples, fs, tau = 0.01) {
   const width = Math.floor(fs * tau);
-  const out = new Float64Array(samples.length);
+  const n = samples.length;
+  const out = new Float64Array(n);
+  if (width > n) throw new Error('signal is shorter than the integration time');
+
   let total = 0;
-  for (let i = 0; i < samples.length; i++) {
+  for (let i = n - width; i < n; i++) total += samples[i] * samples[i];
+  for (let i = 0; i < n; i++) {
     total += samples[i] * samples[i];
-    if (i >= width) total -= samples[i - width] * samples[i - width];
-    out[i] = Math.sqrt(total / width);
+    total -= i >= width ? samples[i - width] ** 2 : samples[n - width + i] ** 2;
+    out[i] = Math.sqrt(Math.max(total, 0) / width);
   }
   return out;
 }
 
-/** Peak, impulse and Leq for one window, in the published units. */
-export function metrics(samples, dt, fs = 1 / dt) {
+/* The bounds the report's method searches within, from `tbacss.analysis`.
+ * They are not cosmetic: the peak window keeps a late reflection off the peak
+ * and the impulse trough, and the Leq window keeps the search on the shot
+ * rather than on whatever rang loudest in the bay afterwards. */
+export const PEAK_STOP_S = 0.075; // end of the peak search, from window start
+export const LEQ_TRIGGER_PA = 1.0; // shot start = first sample above this
+export const LEQ_WIDTH_MS = 25.0; // how far past shot start to look for Leq
+
+/**
+ * The published analysis of one record: the curves, and the indices the
+ * report's method picks out of them.
+ *
+ * Returned rather than reduced to numbers so a plot can mark *where* each
+ * figure came from. A cumulative-impulse curve on its own is unreadable — it
+ * wanders for a hundred milliseconds and ends somewhere arbitrary — because
+ * the published impulse is not "the integral", it is the maximum of the
+ * integral up to the trough. Without the trough drawn on it, the curve does
+ * not show the number it is supposed to explain.
+ */
+export function analyse(samples, dt, fs = 1 / dt) {
   const [b, a] = aWeightingCoefficients(fs);
   const weighted = lfilter(b, a, samples);
   const integral = impulse(samples, dt);
   const running = leq(weighted, fs);
+  const n = samples.length;
+
+  // Octave rounds half away from zero; for a positive product that is floor+0.5.
+  const peakStop = Math.min(Math.floor(PEAK_STOP_S * fs + 0.5), n);
 
   let peak = -Infinity;
+  let peakIndex = 0;
   let peakA = -Infinity;
-  for (let i = 0; i < samples.length; i++) {
-    if (samples[i] > peak) peak = samples[i];
+  for (let i = 0; i < peakStop; i++) {
+    if (samples[i] > peak) { peak = samples[i]; peakIndex = i; }
     if (weighted[i] > peakA) peakA = weighted[i];
   }
-  // Impulse window ends at the trough, per the report's method.
+
   let trough = 0;
-  for (let i = 1; i < integral.length; i++) {
-    if (integral[i] < integral[trough]) trough = i;
+  for (let i = 1; i < peakStop; i++) if (integral[i] < integral[trough]) trough = i;
+  let impulseIndex = 0;
+  for (let i = 1; i <= trough; i++) if (integral[i] > integral[impulseIndex]) impulseIndex = i;
+  const peakImpulse = Math.max(integral[impulseIndex], 0);
+
+  // Shot start is the first sample over the trigger, and the Leq peak is looked
+  // for in the 25 ms after it. Records that never break 1 Pa do exist in
+  // principle; fall back to the whole record rather than throwing at a reader.
+  let leqStart = -1;
+  for (let i = 0; i < n; i++) {
+    if (samples[i] > LEQ_TRIGGER_PA) { leqStart = i; break; }
   }
-  let peakImpulse = 0;
-  for (let i = 0; i <= trough; i++) {
-    if (integral[i] > peakImpulse) peakImpulse = integral[i];
-  }
+  const triggered = leqStart >= 0;
+  if (!triggered) leqStart = 0;
+  const leqStop = triggered
+    ? Math.min(leqStart + Math.floor((LEQ_WIDTH_MS * fs) / 1000 + 0.5), n - 1)
+    : n - 1;
+
   let peakLeq = 0;
-  for (let i = 0; i < running.length; i++) {
-    if (running[i] > peakLeq) peakLeq = running[i];
+  let leqIndex = leqStart;
+  for (let i = leqStart; i <= leqStop; i++) {
+    if (running[i] > peakLeq) { peakLeq = running[i]; leqIndex = i; }
   }
 
   return {
+    samples, weighted, integral, running,
+    peakStop, peakIndex, trough, impulseIndex, leqStart, leqStop, leqIndex, triggered,
     peak_pa: peak,
     peak_db: toDb(peak),
     peak_dba: toDb(peakA),
@@ -532,4 +582,12 @@ export function metrics(samples, dt, fs = 1 / dt) {
     impulse_db_ms: toDb(peakImpulse),
     peak_leq10ms_dba: toDb(peakLeq),
   };
+}
+
+/** Peak, impulse and Leq for one window, in the published units. */
+export function metrics(samples, dt, fs = 1 / dt) {
+  const {
+    peak_pa, peak_db, peak_dba, impulse_pa_ms, impulse_db_ms, peak_leq10ms_dba,
+  } = analyse(samples, dt, fs);
+  return { peak_pa, peak_db, peak_dba, impulse_pa_ms, impulse_db_ms, peak_leq10ms_dba };
 }

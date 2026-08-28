@@ -139,15 +139,25 @@
       <h2 id="wave-title">Waveforms</h2>
       <p class="hint" id="wave-hint">Pick a run to load its traces.</p>
       <div class="plot-wrap">
-        <canvas id="wave" height="300"></canvas>
+        <!-- The rig pre-triggers, so the shot lands around 50 ms into a 125 ms
+             capture. The plot opens on the blast rather than the whole window;
+             scroll, pinch or the arrow keys move it. -->
+        <canvas id="wave" height="300"
+                aria-label="Pressure traces. Scroll to zoom, drag to pan, arrow keys to move, plus and minus to zoom."></canvas>
         <div class="tooltip" id="wave-tip" hidden></div>
       </div>
-      <div class="legend" id="wave-legend"></div>
+      <div class="legend" id="wave-legend">
+        <button id="wave-reset" class="link-button" type="button" hidden>reset zoom</button>
+      </div>
       <div class="shots" id="shots"></div>
       <div id="derived" hidden>
         <p class="hint" style="margin-top:14px">
           Impulse and Leq are not published in the bundle — they are computed
-          here from the full-rate samples, so the window is yours to change.
+          here from the full-rate samples by the same method the report uses.
+          The shaded stretch is what each figure was taken from: the impulse is
+          the largest the running integral gets before the trough, not where it
+          ends up, and the Leq peak is looked for in the 25 ms after the shot
+          starts.
         </p>
         <div class="plot-wrap"><canvas id="impulse" height="150"></canvas></div>
         <div class="plot-wrap"><canvas id="leq" height="150"></canvas></div>

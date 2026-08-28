@@ -221,11 +221,92 @@ check(
   await evaluate("document.querySelectorAll('#shots button').length > 0"),
   `${await evaluate("document.querySelectorAll('#shots button').length")} shot buttons`,
 );
-await tap('#shots button');
+// The card opens framed on the blast, not on the whole 125 ms capture: the rig
+// pre-triggers, so a full-window view is two fifths dead air.
+const framing = await evaluate(`(() => {
+  const m = document.getElementById('wave-hint').textContent.match(/([\\d.]+)–([\\d.]+) ms/);
+  return m ? { from: +m[1], to: +m[2] } : null;
+})()`);
+check(
+  'the view opens on the blast, not the whole window',
+  framing && framing.to - framing.from < 40 && framing.from > 20,
+  framing ? `${framing.from}–${framing.to} ms` : 'no framing in the hint',
+);
+
+// The first button is the way back to the overview, so pick a real shot.
+await tap('#shots button:nth-child(2)');
 check(
   'a shot loads at full rate',
   await evaluate("document.getElementById('derived').hidden === false"),
   await evaluate("document.getElementById('wave-hint').textContent.slice(0, 60)"),
+);
+check(
+  'the hint reports the published figures for that shot',
+  await evaluate(
+    "/peak [\\d.]+ Pa .* impulse [\\d.]+ Pa·ms .* Leq\\(10ms\\) [\\d.]+ dBA/" +
+      ".test(document.getElementById('wave-hint').textContent)",
+  ),
+  await evaluate("document.getElementById('wave-hint').textContent.slice(0, 90)"),
+);
+
+// A tap on the trace pins a readout, the same gesture the scatter uses.
+await tap('#wave');
+check(
+  'a tap on the trace pins a readout',
+  await evaluate("!document.getElementById('wave-tip').hidden"),
+  (await evaluate("document.getElementById('wave-tip').innerText")).split('\n')[0],
+);
+await tap('#wave-tip .tip-close');
+check(
+  'the readout can be dismissed',
+  await evaluate("document.getElementById('wave-tip').hidden"),
+);
+
+// Zooming is reversible, and the control only exists once there is a zoom.
+check(
+  'no reset control before anything is zoomed',
+  await evaluate("document.getElementById('wave-reset').hidden"),
+);
+// Read the framing again rather than reusing the overview's: loading a shot may
+// have widened the run's own view to reach a trough that fell outside it.
+const framed = await evaluate(`(() => {
+  const m = document.getElementById('wave-hint').textContent.match(/([\\d.]+)–([\\d.]+) ms/);
+  return m ? +m[2] - +m[1] : null;
+})()`);
+const zoomed = await evaluate(`(() => {
+  const c = document.getElementById('wave');
+  c.scrollIntoView({ block: 'center' });
+  const r = c.getBoundingClientRect();
+  c.focus();
+  for (let i = 0; i < 3; i++) {
+    c.dispatchEvent(new KeyboardEvent('keydown', { key: '+', bubbles: true, cancelable: true }));
+  }
+  const m = document.getElementById('wave-hint').textContent.match(/([\\d.]+)–([\\d.]+) ms/);
+  return m ? +m[2] - +m[1] : null;
+})()`);
+check(
+  'the keyboard zooms in',
+  framed !== null && zoomed !== null && zoomed < framed,
+  `${framed?.toFixed(1)} → ${zoomed?.toFixed(1)} ms`,
+);
+await tap('#wave-reset');
+check(
+  'reset zoom restores the run framing',
+  await evaluate(`(() => {
+    const m = document.getElementById('wave-hint').textContent.match(/([\\d.]+)–([\\d.]+) ms/);
+    return !!m && Math.abs((+m[2] - +m[1]) - ${framed}) < 0.2;
+  })()`),
+  await evaluate("document.getElementById('wave-hint').textContent.match(/[\\d.]+–[\\d.]+ ms/)[0]"),
+);
+
+// Picking a shot used to be a one-way door: nothing on the card went back.
+await tap('#shots button:first-child');
+check(
+  'all shots returns to the overview',
+  await evaluate(
+    "document.getElementById('derived').hidden === true && " +
+      "/min\\/max band per mic/.test(document.getElementById('wave-hint').textContent)",
+  ),
 );
 
 // 7. The Z axis punches it into 3D and widens the frontier.

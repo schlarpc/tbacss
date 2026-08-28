@@ -307,6 +307,8 @@ canvas { display: block; width: 100%; touch-action: none; }
   border-left: 1px solid var(--dot-strong);
 }
 .legend .item[hidden] { display: none; }
+/* Matches the plot: a mic that is only context there is only context here. */
+.legend .item.dim { opacity: 0.55; }
 
 .muted-note { text-transform: none; letter-spacing: 0; color: var(--text-muted); }
 .link-button {
@@ -322,6 +324,11 @@ canvas { display: block; width: 100%; touch-action: none; }
 .link-button[hidden] { display: none; }
 canvas.rotatable { cursor: grab; }
 canvas.rotatable:active { cursor: grabbing; }
+/* The wave plot reads out under the cursor and pans under a drag, so it says
+   both: a crosshair at rest, a closed hand once something is being moved. */
+#wave { cursor: crosshair; }
+#wave:active { cursor: grabbing; }
+#wave:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
 
 .table-wrap { overflow: auto; max-height: 460px; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }

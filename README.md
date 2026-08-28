@@ -186,6 +186,19 @@ overview envelopes first, then full rate on demand with impulse and Leq
 derived in the browser. A run or shot is deep-linkable
 (`#run=20&shot=296`), and `?theme=light|dark` overrides the OS setting.
 
+The waveform card opens framed on the blast, not on the whole window. The rig
+pre-triggers and every shot in the archive arrives between about 47 and 56 ms,
+so a full-window view spends two fifths of the plot on guaranteed silence and
+leaves the event a few pixels wide. Scroll, pinch, drag or the arrow keys move
+the view; `reset zoom` returns to the run's own framing, which is widened if a
+shot's trough falls outside it. The shots of one mic are drawn as a single
+min/max band — its width is the shot-to-shot spread — and picking a shot draws
+that record at full rate on top. Impulse and Leq are marked where the report's
+method takes them from: the impulse is the largest the running integral gets
+before the trough, not where it ends up, and the Leq peak is looked for in the
+25 ms after the shot starts. A marker the reader has zoomed past is pulled to
+the edge with its time rather than dropped.
+
 Setting a Z axis punches the plot into 3D — drag to rotate — and the frontier
 becomes 3-objective. Direction is a property of each measure rather than a
 control: everything on the axes is a sound level or a physical dimension, so
@@ -218,7 +231,10 @@ code, or the rendered list would look unsorted.
 
 `web/tbacss.js` is the dependency-free reader underneath it: `loadBundle`,
 `selection`, `paretoFront`, `fetchRunEnvelopes`, `fetchSamples`, `decodeFrame`,
-and the derived `impulse` / `leq` / `metrics`. To confirm the browser maths
+and the derived `impulse` / `leq` / `metrics`. `analyse` is the same analysis
+returning its working — the curves plus the indices the report's method picks
+out of them — which is what lets the plots mark where a figure came from;
+`metrics` is that reduced to the published numbers. To confirm the browser maths
 matches Python:
 
 ```
