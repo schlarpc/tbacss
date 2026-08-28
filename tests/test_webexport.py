@@ -54,6 +54,34 @@ def test_envelope_bucket_alignment():
     assert envelope[1] == pytest.approx(1.0)
 
 
+def test_envelope_tiles_the_whole_record():
+    """Buckets must cover every sample, including a tail that does not divide.
+
+    A client has nothing to place a bucket in time with except the assumption
+    that the buckets span the record.  An envelope covering only a round
+    multiple of ``buckets`` therefore does not merely lose its tail: the rest
+    gets drawn stretched across the full width, and every feature in it lands
+    late.  32507 samples over 2048 buckets used to drop 1787 of them -- 6.8 ms
+    -- and shift the blast about 2.8 ms to the right.
+    """
+    size = 32507  # a real record length; 32507 % 2048 == 1787
+    window = np.arange(size, dtype=np.float64)
+    envelope = _envelope(window, 2048)
+
+    # The last bucket must reach the last sample.
+    assert envelope[1::2].max() == pytest.approx(size - 1)
+    # And the buckets must be contiguous: each one picks up where the last left
+    # off, so no sample falls between two of them.
+    lows, highs = envelope[0::2], envelope[1::2]
+    assert lows[0] == pytest.approx(0.0)
+    assert np.allclose(lows[1:], highs[:-1] + 1)
+
+
+def test_envelope_refuses_a_record_it_cannot_fill():
+    with pytest.raises(ValueError, match="cannot fill"):
+        _envelope(np.zeros(100, dtype=np.float32), 2048)
+
+
 def test_quantize_round_trips_within_one_step():
     values = np.array([0.0, 1.5, -300.25, 295.666], dtype=np.float32)
     payload, scale = _quantize(values)

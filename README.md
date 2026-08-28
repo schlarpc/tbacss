@@ -116,6 +116,12 @@ serve with no backend and no query engine:
 | `envelopes.bin` | on demand | 2048-bucket min/max per record, raw int16 |
 | `samples.bin` | on demand | full-rate analysis window, `fixed2-rice-v1` frames |
 
+The envelope's buckets tile the whole record, which means uneven ones: 32507
+samples do not divide into 2048. A client has nothing to place a bucket in time
+with except the assumption that the buckets span the record, so truncating to a
+round multiple would not merely lose the tail — the rest would be drawn
+stretched across the full width, putting every feature in it milliseconds late.
+
 The split is deliberate. Everything filterable is a few thousand rows, so it
 ships whole and lands in typed arrays; filtering and Pareto search are plain
 loops. Everything large is a waveform, which no SQL engine helps with — those

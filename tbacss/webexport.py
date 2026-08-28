@@ -178,12 +178,22 @@ def _analysis_window(samples: np.ndarray, dt: float, cartridge: str, year: int):
 
 
 def _envelope(window: np.ndarray, buckets: int) -> np.ndarray:
-    """Interleaved min/max per bucket, as float32."""
-    usable = (window.size // buckets) * buckets
-    reshaped = window[:usable].reshape(buckets, -1)
+    """Interleaved min/max per bucket, as float32.
+
+    The buckets tile the *whole* window, which needs uneven ones: 32507 samples
+    do not divide into 2048.  Truncating to a round multiple instead would drop
+    the last 1787 samples -- 6.8 ms, the tail end of the decay -- and, worse,
+    leave a reader no way to know it had happened.  A client can only place a
+    bucket in time by assuming the buckets span the record, so an envelope that
+    quietly covers 117 ms of a 124 ms window is drawn stretched across the full
+    width and puts every feature in it a few milliseconds late.
+    """
+    if window.size < buckets:
+        raise ValueError(f"{window.size} samples cannot fill {buckets} buckets")
+    edges = (np.arange(buckets) * window.size) // buckets
     out = np.empty(buckets * 2, dtype=np.float32)
-    out[0::2] = reshaped.min(axis=1)
-    out[1::2] = reshaped.max(axis=1)
+    out[0::2] = np.minimum.reduceat(window, edges)
+    out[1::2] = np.maximum.reduceat(window, edges)
     return out
 
 
