@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from tbacss.summit import (
+    SummaryRow,
     parse_event,
     parse_run_dir,
     parse_spec_filename,
@@ -244,3 +247,45 @@ def test_a_zero_physical_spec_is_missing_not_zero(tmp_path):
     assert real.weight_oz == 6.3
     assert real.length_in == 4.58
     assert real.max_diameter_in == 1.11
+
+
+DEFECT_CSV = """\
+_EVENT_,_MFGR_,_SUPPRESSOR_,_CAL_,_CART_,SE,SE,SE,SE,SE,SE,
+_EVENT_,_MFGR_,_SUPPRESSOR_,_CAL_,_CART_,PkPr,dB,dB(A),Im-Pa,Im-dB,Pk Leq,shots,weight,len,maxdia
+20240819,YHM,"Turbo T3",".223","5.56-16AR",1,2,3,4,5,6,5,17.5,1.88,1.5
+20240819,YHM,"Turbo T3",".223",".308-20BA",1,2,3,4,5,6,5,17.5,1.88,1.5
+"""
+
+
+def test_a_known_bad_dimension_is_dropped(tmp_path):
+    """1.88 in is not a length, and the zero rule cannot see it.
+
+    The 2023 table has the same can at 6.9 in and 17.54 oz. Only the length
+    cell is wrong, so only the length goes -- the weight and diameter either
+    side of it agree with 2023 and are kept.
+    """
+    path = tmp_path / "all.csv"
+    path.write_text(DEFECT_CSV)
+    flagged, other_host = read_summary_csv(path)
+
+    assert flagged.length_in is None
+    assert flagged.weight_oz == 17.5
+    assert flagged.max_diameter_in == 1.5
+    # The key includes the host, so the same can elsewhere is not touched.
+    assert other_host.length_in == 1.88
+
+
+def test_spec_defects_name_rows_that_exist(tmp_path):
+    """A defect keyed to a row that is not in the table would be silently dead."""
+    from pathlib import Path
+
+    from tbacss.summit import SPEC_DEFECTS
+
+    fields = {f.name for f in dataclasses.fields(SummaryRow)}
+    for key, dropped in SPEC_DEFECTS.items():
+        assert dropped <= fields, key
+        year = key[0][:4]
+        source = Path(__file__).resolve().parent.parent / f"summit{year}/all.csv"
+        if not source.exists():  # the tracked tables travel with the repo
+            continue
+        assert any(row.key == key for row in read_summary_csv(source)), key

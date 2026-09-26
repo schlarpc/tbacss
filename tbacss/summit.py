@@ -15,6 +15,7 @@ __all__ = [
     "MICS",
     "METRIC_COLUMNS",
     "RunKey",
+    "SPEC_DEFECTS",
     "RunDir",
     "Specs",
     "SummaryRow",
@@ -113,6 +114,35 @@ def is_reference_run(manufacturer: str, cartridge: str) -> bool:
 
 RunKey = tuple[str, str, str, str, str]
 """(event_label, manufacturer, suppressor, caliber, cartridge)."""
+
+
+SPEC_DEFECTS: dict[RunKey, frozenset[str]] = {
+    # YHM's Turbo T3 is published as 1.88 in long. The 2023 table has the same
+    # can at 6.9 in. Only that one cell is wrong: the row is the full 27
+    # columns, and the weight and diameter either side of it both agree with
+    # 2023 (17.5 vs 17.54 oz, 1.5 vs 1.565 in), so this is a mis-keyed length
+    # rather than a shifted or truncated row.
+    #
+    # This is the zero-spec failure again in a form the zero rule cannot see. A
+    # 1.88 in, 17.5 oz suppressor is shorter than anything real, so it wins
+    # every length frontier it appears on while being nowhere near the
+    # lightest -- which is precisely how it hid. Nothing in the report flags
+    # it, so unlike tbacss.caveats this is our finding rather than TBAC's.
+    #
+    # Dropped rather than back-filled from 2023. These are different runs a
+    # year apart, and a measured 6.9 in is not evidence about what was on the
+    # bench in 2024; the project's rule everywhere else is a null over a
+    # plausible guess.
+    ("20240819", "YHM", "Turbo T3", ".223", "5.56-16AR"): frozenset({"length_in"}),
+}
+"""Physical dimensions that are wrong in ``all.csv`` rather than merely absent.
+
+Keyed by :data:`RunKey`, valued with the ``SummaryRow`` fields to drop. Kept as
+an explicit table of known-bad cells rather than a plausibility filter, because
+a threshold that caught 1.88 in would sit uncomfortably close to the genuinely
+tiny cans in the set -- Blackbird's X9G5 at 3.4 in and RR Weapons' Chode at
+3.63 in are real measurements of real suppressors.
+"""
 
 
 @dataclass(frozen=True)
@@ -379,19 +409,28 @@ def read_summary_csv(path) -> list[SummaryRow]:
             metrics.setdefault(mic, {})[column] = num(row[index])
         shots = num(row[trailing["shots"]])
         label, date = parse_event(row[0])
+        key: RunKey = (
+            label, row[1].strip(), row[2].strip(), row[3].strip(), row[4].strip()
+        )
+        defects = SPEC_DEFECTS.get(key, frozenset())
+        dimensions = {
+            "weight_oz": dimension(row[trailing["weight"]]),
+            "length_in": dimension(row[trailing["len"]]),
+            "max_diameter_in": dimension(row[trailing["maxdia"]]),
+        }
+        for field in defects:
+            dimensions[field] = None
         out.append(
             SummaryRow(
                 event_label=label,
                 event_date=date,
-                manufacturer=row[1].strip(),
-                suppressor=row[2].strip(),
-                caliber=row[3].strip(),
-                cartridge=row[4].strip(),
+                manufacturer=key[1],
+                suppressor=key[2],
+                caliber=key[3],
+                cartridge=key[4],
                 shots=int(shots) if shots is not None else None,
-                weight_oz=dimension(row[trailing["weight"]]),
-                length_in=dimension(row[trailing["len"]]),
-                max_diameter_in=dimension(row[trailing["maxdia"]]),
                 metrics=metrics,
+                **dimensions,
             )
         )
     return out

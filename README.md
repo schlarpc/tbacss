@@ -347,6 +347,18 @@ python3 -m pytest
   anything real — before the fix IASW ranked as the lightest *and* shortest
   suppressor in the dataset and sat unbeatable on every weight or length
   frontier.
+* One published dimension is not missing but **wrong**. The 2024 table gives
+  YHM's Turbo T3 a length of 1.88 in; the 2023 table has the same can at
+  6.9 in. Only that cell is bad — the row is its full 27 columns, and the
+  weight and diameter on either side agree with 2023 (17.5 vs 17.54 oz,
+  1.5 vs 1.565 in) — so it is a mis-keyed length, not a shifted row. It is the
+  zero-spec failure in a form the zero rule cannot catch: at 1.88 in and
+  17.5 oz it won every length frontier it touched while being nowhere near the
+  lightest, which is how it went unnoticed. `summit.SPEC_DEFECTS` lists it and
+  `read_summary_csv` drops the cell. It is dropped rather than back-filled from
+  2023, because a measurement taken a year earlier is not evidence about what
+  was on the bench in 2024. Unlike `tbacss/caveats.py`, nothing in the report
+  flags this one — it is our finding, not TBAC's.
 * **TBAC published a warning that is not in the data.** The 2024 `.22LR-BA`
   host was a last-minute substitute after a rifle malfunction, and it rings at
   the shooter's-ear mic on roughly half the shots: *"it is probably best to

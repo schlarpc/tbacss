@@ -8,6 +8,10 @@ say to disregard.
 Found by grepping all four reports for advisory language; there is exactly one
 substantive entry so far. The rest of what turned up was the boilerplate
 "typos are possible" line that every year carries.
+
+Everything here is a warning *TBAC* wrote. Errors we found ourselves, which
+they did not flag, do not belong in this table --
+:data:`tbacss.summit.SPEC_DEFECTS` holds those.
 """
 
 from __future__ import annotations
