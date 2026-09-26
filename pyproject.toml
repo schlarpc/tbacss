@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "tbacss"
 version = "0.1.0"
 description = "Parse TBAC Silencer Summit release sets into SQLite"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.24"]
 

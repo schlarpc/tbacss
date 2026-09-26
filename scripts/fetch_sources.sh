@@ -2,7 +2,7 @@
 # Fetch everything the build needs from thunderbeastarms.com.
 #
 #   scripts/fetch_sources.sh            # tables, reports and reference code
-#   scripts/fetch_sources.sh --archives # also the ~21 GB of release sets
+#   scripts/fetch_sources.sh --archives # also the ~27 GB of release sets
 #
 # The summary tables are tracked in git; the report pages and the Octave they
 # link are not, because TBAC holds copyright on them. This script puts them

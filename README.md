@@ -177,6 +177,28 @@ Use `scripts/serve.py`, not `python -m http.server`: the stock one ignores
 all 559 MB of `samples.bin`. Any real static host (S3, Cloudflare, nginx,
 Caddy) handles ranges correctly.
 
+### Deploying to GitHub Pages
+
+The bundle is ~640 MB and is built from archives no CI runner has room for, so
+it is shipped as a GitHub release rather than committed — not in LFS either,
+whose quota is charged on every clone and every deploy. `web/DATA_RELEASE`
+names the release the site is built against:
+
+```
+python -m tbacss publish tbacss.db web/data
+scripts/release_data.sh        # uploads web/data as release data-<version>
+git add web/DATA_RELEASE && git commit -m "Publish data-<version>" && git push
+```
+
+`.github/workflows/pages.yml` then copies the four static files, downloads that
+release into `data/`, and deploys. Set the repository's Pages source to
+*GitHub Actions* once. The site fits the 1 GB Pages limit, and Pages answers
+`Range` requests, which the waveform loader depends on.
+
+The release tag is the bundle's content hash, so re-running the script on an
+unchanged bundle is a no-op, and a code-only push redeploys against the same
+data.
+
 The page filters on facets and numeric ranges, plots any measure against any
 other with the Pareto frontier highlighted, and draws a run's waveforms —
 overview envelopes first, then full rate on demand with impulse and Leq
