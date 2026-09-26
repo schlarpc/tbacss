@@ -101,9 +101,11 @@ def main() -> int:
     out.append(f"| caliber | {header} |")
     out.append("| --- |" + " ---: |" * len(ordered))
     calibers = {r.caliber for rows in years.values() for r in rows}
-    for caliber in sorted(calibers, key=lambda c: -sum(
+    # Ties break on the name: the set's order changes with every interpreter,
+    # and the file should only change when the data does.
+    for caliber in sorted(calibers, key=lambda c: (-sum(
         sum(1 for r in years[y] if r.caliber == c) for y in ordered
-    )):
+    ), c)):
         counts = [
             str(sum(1 for r in years[year] if r.caliber == caliber) or "--")
             for year in ordered
@@ -116,9 +118,9 @@ def main() -> int:
     out.append(f"| code | host / ammunition | {header} |")
     out.append("| --- | --- |" + " ---: |" * len(ordered))
     cartridges = {r.cartridge for rows in years.values() for r in rows}
-    for cartridge in sorted(cartridges, key=lambda c: -sum(
+    for cartridge in sorted(cartridges, key=lambda c: (-sum(
         sum(1 for r in years[y] if r.cartridge == c) for y in ordered
-    )):
+    ), c)):
         counts = [
             str(sum(1 for r in years[year] if r.cartridge == cartridge) or "--")
             for year in ordered

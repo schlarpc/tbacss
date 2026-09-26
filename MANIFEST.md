@@ -26,18 +26,18 @@ larger-bore host, so these do not match the cartridge counts below.
 | .338 | 2 | 12 | 16 | -- |
 | 6mm | 10 | 7 | 2 | 3 |
 | .375 | -- | -- | 4 | 3 |
-| 6.5mm | 2 | 1 | 1 | 1 |
 | .280 | 3 | -- | 2 | -- |
-| .50 | -- | 1 | 2 | -- |
-| .36 | -- | -- | 3 | -- |
+| 6.5mm | 2 | 1 | 1 | 1 |
 | .33 | -- | -- | -- | 3 |
+| .36 | -- | -- | 3 | -- |
+| .50 | -- | 1 | 2 | -- |
+| .360 | -- | -- | 2 | -- |
 | .50 Non-BMG | -- | -- | 2 | -- |
 | 10mm | 1 | 1 | -- | -- |
-| .360 | -- | -- | 2 | -- |
 | .32 | -- | 1 | -- | -- |
-| hand | -- | -- | -- | 1 |
 | 5.7 | -- | -- | 1 | -- |
 | 7mm | -- | -- | 1 | -- |
+| hand | -- | -- | -- | 1 |
 
 ## Host and cartridge codes
 
@@ -53,48 +53,48 @@ larger-bore host, so these do not match the cartridge counts below.
 | `.300BO-16AR-SUB` | 220gr subsonic Ammo Inc Stelth .300 Blackout from a Daniel Defense 16" AR | -- | -- | 62 | -- |
 | `.22LR-PS` | CCI Standard Velocity from a Sig P322 pistol | 21 | 28 | 4 | -- |
 | `.22LR-BA` | CCI Standard Velocity from a 16.5" Volquartsen Summit bolt action | -- | -- | 26 | -- |
-| `9mmSTTH-MP5K` | Ammo Inc Stelth 165gr from an HK MP5K/SP5K | -- | -- | -- | 8 |
 | `9mm-MP5K` | CCI Blazer Brass 124gr from an HK MP5K/SP5K | -- | -- | -- | 8 |
+| `9mmSTTH-MP5K` | Ammo Inc Stelth 165gr from an HK MP5K/SP5K | -- | -- | -- | 8 |
 | `APC9-SUB` | B&T's APC9 shooting 165gr subsonic | -- | -- | 6 | -- |
 | `.45-70FP` | Hornady LEVERevolution 325gr FTX from a Marlin 1895, 16" barrel | -- | -- | -- | 4 |
-| `9mmSTTH` | Ammo Inc Stelth 165gr from a Staccato P | -- | -- | -- | 4 |
 | `.45-70SUB` | Defiant Munitions 400gr TCX-S subsonic from a Marlin 1895, 16" barrel | -- | -- | -- | 4 |
-| `.338LM-26BA` | Hornady 285gr ELD from a 26" Barrett MRAD | -- | -- | 3 | -- |
-| `MP9-SUB` | B&T's MP9 shooting 165gr subsonic | -- | -- | 3 | -- |
-| `5.56-12.5AR` | Allen Engineering's 12.5" AR | -- | -- | 3 | -- |
+| `9mmSTTH` | Ammo Inc Stelth 165gr from a Staccato P | -- | -- | -- | 4 |
 | `.338LM` | Hornady 285gr ELD from a 24" Barrett MRAD | -- | -- | -- | 3 |
+| `.338LM-26BA` | Hornady 285gr ELD from a 26" Barrett MRAD | -- | -- | 3 | -- |
+| `5.56-11.5AR` | Allen Engineering's 11.5" AR | -- | -- | 3 | -- |
+| `5.56-12.5AR` | Allen Engineering's 12.5" AR | -- | -- | 3 | -- |
 | `6CM-BA` | a 6mm Creedmoor bolt action | -- | 3 | -- | -- |
 | `9mm` | CCI Blazer Brass 124gr from a Staccato P (factory threaded) | -- | -- | -- | 3 |
-| `5.56-11.5AR` | Allen Engineering's 11.5" AR | -- | -- | 3 | -- |
-| `5.56-MK12` | LC M193 55gr from an 18" MK12 SPR clone | -- | -- | -- | 2 |
+| `MP9-SUB` | B&T's MP9 shooting 165gr subsonic | -- | -- | 3 | -- |
 | `.375RUM-BA` | W.T.F.'s .375 RUM | -- | -- | 2 | -- |
-| `5.56-14.5AR` | Allen Engineering's 14.5" AR | -- | -- | 2 | -- |
-| `7BC-18BA` | Federal Peak 155gr 7mm Backcountry (a high-pressure load) from W.T.F.'s 18" bolt action | 2 | -- | -- | -- |
 | `13.7-5.56-Infidel` | a 13.7" Noveske Infidel AR | -- | 2 | -- | -- |
-| `9mmSTTH-CZ` | Ammo Inc Stelth 165gr from a CZ Scorpion | -- | -- | -- | 1 |
-| `9mm-CZ` | CCI Blazer Brass 124gr from a CZ Scorpion | -- | -- | -- | 1 |
-| `5.56-AE12.5AR` | Allen Engineering's 12.5" AR | -- | 1 | -- | -- |
-| `.300BO-SUBS-Integral` | B&T's integrally-suppressed rifle | -- | -- | 1 | -- |
-| `7-08` | Ecco's integrally-suppressed 7mm-08 rifle | -- | -- | 1 | -- |
-| `.300BO-RAT-110` | a Sig Rattler shooting 110gr Barnes | -- | -- | 1 | -- |
-| `.50Beowolf-SA` | a .50 Beowulf semi-automatic | -- | -- | 1 | -- |
-| `9mm-EI-PCC` | an 8.5" AR9 provided by Elite Iron, Ammo Inc Stelth 165gr | -- | 1 | -- | -- |
-| `hand` | the sound of a hand clap, recorded as a reference | -- | -- | -- | 1 |
-| `6.5GREN-20AR` | W.T.F.'s 20" 6.5 Grendel AR | -- | -- | 1 | -- |
-| `Berretta-32Auto` | a Beretta .32 Auto pistol | -- | 1 | -- | -- |
-| `.308-24BA` | B&T's 24" .308 shooting M118LR | -- | -- | 1 | -- |
-| `10mm-SUB-Stribog` | a Grand Power Stribog shooting subsonic 10mm | -- | 1 | -- | -- |
-| `5.7-PS` | Ecco's Caracal 5.7 pistol | -- | -- | 1 | -- |
-| `.50BW-SUB-10.5AR` | subsonic .50 Beowulf from a 10.5" AR | -- | 1 | -- | -- |
-| `5.56-MK12AR` | B&T's MK12 | -- | -- | 1 | -- |
-| `.300BO-RAT-220` | a Sig Rattler shooting 220gr subsonic | -- | -- | 1 | -- |
+| `5.56-14.5AR` | Allen Engineering's 14.5" AR | -- | -- | 2 | -- |
+| `5.56-MK12` | LC M193 55gr from an 18" MK12 SPR clone | -- | -- | -- | 2 |
+| `7BC-18BA` | Federal Peak 155gr 7mm Backcountry (a high-pressure load) from W.T.F.'s 18" bolt action | 2 | -- | -- | -- |
 | `.22LR-Integral-SA` | Innovative Arms' integrally-suppressed .22 rifle | -- | -- | 1 | -- |
+| `.300BO-RAT-110` | a Sig Rattler shooting 110gr Barnes | -- | -- | 1 | -- |
+| `.300BO-RAT-220` | a Sig Rattler shooting 220gr subsonic | -- | -- | 1 | -- |
+| `.300BO-SUBS-Integral` | B&T's integrally-suppressed rifle | -- | -- | 1 | -- |
+| `.308-24BA` | B&T's 24" .308 shooting M118LR | -- | -- | 1 | -- |
 | `.338LM-SAKO` | Sako 250gr from a 27" Sako TRG M10, provided by Elite Iron | -- | 1 | -- | -- |
 | `.500SW-SUB` | W.T.F.'s .500 S&W lever action shooting subsonic | -- | -- | 1 | -- |
+| `.50BW-SUB-10.5AR` | subsonic .50 Beowulf from a 10.5" AR | -- | 1 | -- | -- |
+| `.50Beowolf-SA` | a .50 Beowulf semi-automatic | -- | -- | 1 | -- |
+| `10mm-SUB-Stribog` | a Grand Power Stribog shooting subsonic 10mm | -- | 1 | -- | -- |
+| `5.56-AE12.5AR` | Allen Engineering's 12.5" AR | -- | 1 | -- | -- |
+| `5.56-AE18AR` | Allen Engineering's 18" AR | -- | 1 | -- | -- |
+| `5.56-MK12AR` | B&T's MK12 | -- | -- | 1 | -- |
+| `5.7-PS` | Ecco's Caracal 5.7 pistol | -- | -- | 1 | -- |
+| `6.5GREN-20AR` | W.T.F.'s 20" 6.5 Grendel AR | -- | -- | 1 | -- |
+| `6ARC-16AR` | Allen Engineering's 16" 6mm ARC AR | -- | -- | 1 | -- |
+| `7-08` | Ecco's integrally-suppressed 7mm-08 rifle | -- | -- | 1 | -- |
 | `9mm-19X` | Ammo Inc Stelth 165gr from an integrally-suppressed Glock 19X | -- | 1 | -- | -- |
 | `9mm-5AR` | a 5" AR9 | -- | 1 | -- | -- |
-| `6ARC-16AR` | Allen Engineering's 16" 6mm ARC AR | -- | -- | 1 | -- |
-| `5.56-AE18AR` | Allen Engineering's 18" AR | -- | 1 | -- | -- |
+| `9mm-CZ` | CCI Blazer Brass 124gr from a CZ Scorpion | -- | -- | -- | 1 |
+| `9mm-EI-PCC` | an 8.5" AR9 provided by Elite Iron, Ammo Inc Stelth 165gr | -- | 1 | -- | -- |
+| `9mmSTTH-CZ` | Ammo Inc Stelth 165gr from a CZ Scorpion | -- | -- | -- | 1 |
+| `Berretta-32Auto` | a Beretta .32 Auto pistol | -- | 1 | -- | -- |
+| `hand` | the sound of a hand clap, recorded as a reference | -- | -- | -- | 1 |
 
 ## Manufacturers and models
 
