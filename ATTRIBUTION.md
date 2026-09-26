@@ -50,4 +50,5 @@ demonstrates the port agrees with TBAC's published numbers.
 ## This code
 
 The code in this repository is separate from the data and carries no claim over
-it.
+it. The code is MIT-licensed (see [LICENSE](LICENSE)); that license covers the
+code only, and the data stays under TBAC's terms above.
