@@ -16,25 +16,39 @@ concurrency:
 
 jobs:
   build:
-    # Nothing to deploy until scripts/release_data.sh has pinned a bundle.
-    if: hashFiles('web/data-release.json') != ''
     runs-on: ubuntu-latest
+    outputs:
+      pinned: ${{ steps.pin.outputs.pinned }}
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: DeterminateSystems/nix-installer-action@v22
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      # Nothing to deploy until scripts/release_data.sh has pinned a bundle.
+      - id: pin
+        run: |
+          if [ -f web/data-release.json ]; then
+            echo "pinned=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::web/data-release.json is not committed yet; skipping the deploy"
+          fi
+      - if: steps.pin.outputs.pinned
+        uses: DeterminateSystems/nix-installer-action@v22
+      - if: steps.pin.outputs.pinned
+        uses: DeterminateSystems/magic-nix-cache-action@v13
       # The viewer, plus the data bundle fetched from the release that
       # web/data-release.json pins by hash.
-      - run: nix build .#site --print-build-logs
+      - if: steps.pin.outputs.pinned
+        run: nix build .#site --print-build-logs
       # nix build gives a symlink into a read-only store path, and the data
       # files are themselves symlinks; Pages needs a real directory tree.
-      - run: cp -rL result _site && chmod -R u+w _site
-      - uses: actions/upload-pages-artifact@v3
+      - if: steps.pin.outputs.pinned
+        run: cp -rL result _site && chmod -R u+w _site
+      - if: steps.pin.outputs.pinned
+        uses: actions/upload-pages-artifact@v3
         with:
           path: _site
 
   deploy:
     needs: build
+    if: needs.build.outputs.pinned
     runs-on: ubuntu-latest
     environment:
       name: github-pages
