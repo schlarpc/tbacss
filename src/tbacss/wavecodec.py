@@ -205,7 +205,7 @@ def encode(
 
 def decode(payload: bytes) -> np.ndarray:
     """Decode back to Pa. Inverse of :func:`encode` up to the quantiser."""
-    magic, version, order, bits, block_log2, n, scale = _HEADER.unpack_from(payload)
+    magic, version, order, _bits, block_log2, n, scale = _HEADER.unpack_from(payload)
     if magic != _MAGIC:
         raise ValueError("not a tbacss waveform frame")
     if version != _VERSION:
@@ -233,4 +233,4 @@ def decode(payload: bytes) -> np.ndarray:
             position += 1
 
     codes = _restore(residual, seeds, order)
-    return (codes.astype(np.float64) * scale).astype(np.float32)
+    return (codes.astype(np.float64) * float(scale)).astype(np.float32)

@@ -157,7 +157,8 @@ class PulseWaveform:
             hour, minute, second, millis = (int(p) for p in time.split(":"))
         except ValueError:
             return None
-        return _dt.datetime(year, month, day, hour, minute, second, millis * 1000)
+        # The rig's local clock, with no zone recorded; naive is the honest type.
+        return _dt.datetime(year, month, day, hour, minute, second, millis * 1000)  # noqa: DTZ001
 
     # -- data ---------------------------------------------------------------
 

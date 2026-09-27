@@ -84,7 +84,8 @@ def test_reads_the_tags_footer(values):
 
 def test_captured_at_parses_the_colon_before_milliseconds(values):
     waveform = parse_pulse(make_export(values))
-    assert waveform.captured_at == dt.datetime(2025, 8, 18, 15, 40, 50, 41000)
+    # PULSE stamps the rig's local clock with no zone, so naive is correct.
+    assert waveform.captured_at == dt.datetime(2025, 8, 18, 15, 40, 50, 41000)  # noqa: DTZ001
 
 
 def test_captured_at_is_none_when_absent(values):

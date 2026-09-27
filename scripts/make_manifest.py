@@ -80,10 +80,10 @@ def main() -> int:
     for year in ordered:
         rows = years[year]
         wave = stats.get(year, {})
-        models = {(r.manufacturer, r.suppressor) for r in rows}
+        pairs = {(r.manufacturer, r.suppressor) for r in rows}
         out.append(
             f"| {year} | {len({r.event_label for r in rows})} | {len(rows)} "
-            f"| {len({r.manufacturer for r in rows})} | {len(models)} "
+            f"| {len({r.manufacturer for r in rows})} | {len(pairs)} "
             f"| {len({r.caliber for r in rows})} | {len({r.cartridge for r in rows})} "
             f"| {wave.get('waveforms') or '--'} "
             f"| {format(wave['samples'], ',') if wave.get('samples') else '--'} |"

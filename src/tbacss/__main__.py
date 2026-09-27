@@ -420,7 +420,8 @@ def main(argv=None) -> int:
     p.set_defaults(func=_cmd_wave)
 
     args = parser.parse_args(argv)
-    return args.func(args)
+    status: int = args.func(args)
+    return status
 
 
 if __name__ == "__main__":

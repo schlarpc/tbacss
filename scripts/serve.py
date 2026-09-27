@@ -19,6 +19,7 @@ from functools import partial
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import BinaryIO
 
 _RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
@@ -54,7 +55,8 @@ class RangeHandler(SimpleHTTPRequestHandler):
         if Path(path).is_dir():
             return super().send_head()
         try:
-            handle = open(path, "rb")
+            # Handed to http.server, which closes it after copyfile().
+            handle = open(path, "rb")  # noqa: SIM115
         except OSError:
             self.send_error(HTTPStatus.NOT_FOUND, "File not found")
             return None
@@ -94,7 +96,7 @@ class RangeHandler(SimpleHTTPRequestHandler):
 class _Window:
     """A read-only window onto part of a file, for copyfile()."""
 
-    def __init__(self, handle, remaining: int):
+    def __init__(self, handle: BinaryIO, remaining: int):
         self._handle = handle
         self._remaining = remaining
 

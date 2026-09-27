@@ -19,6 +19,7 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import BinaryIO
 
 import numpy as np
 
@@ -72,11 +73,15 @@ class BuildReport:
             f"runs              {self.runs}",
             f"waveforms         {self.waveforms}",
             f"samples           {self.samples:,}",
-            f"blob bytes        {self.blob_bytes / 1e9:.2f} GB"
-            f" ({self.samples * 4 / max(self.blob_bytes, 1):.2f}x vs raw float32)",
-            f"all.csv rows      {self.summary_rows}"
-            f" (matched {self.matched_by_name} by name,"
-            f" {self.matched_by_specs} by physical specs)",
+            (
+                f"blob bytes        {self.blob_bytes / 1e9:.2f} GB"
+                f" ({self.samples * 4 / max(self.blob_bytes, 1):.2f}x vs raw float32)"
+            ),
+            (
+                f"all.csv rows      {self.summary_rows}"
+                f" (matched {self.matched_by_name} by name,"
+                f" {self.matched_by_specs} by physical specs)"
+            ),
         ]
         if self.unmatched_runs:
             lines.append(f"runs not in all.csv ({len(self.unmatched_runs)}):")
@@ -115,19 +120,27 @@ class BuildReport:
 class _HashingReader:
     """File wrapper that SHA-256s the compressed bytes as they stream past."""
 
-    def __init__(self, handle):
+    def __init__(self, handle: BinaryIO) -> None:
         self._handle = handle
         self.digest = hashlib.sha256()
         self.bytes_read = 0
 
-    def read(self, size=-1):
+    def read(self, size: int = -1) -> bytes:
         chunk = self._handle.read(size)
         self.digest.update(chunk)
         self.bytes_read += len(chunk)
         return chunk
 
-    def close(self):
+    def close(self) -> None:
         self._handle.close()
+
+
+@dataclass
+class _ArchiveStats:
+    """What :func:`_iter_members` learns about a tarball by the time it is spent."""
+
+    sha256: str | None = None
+    size: int | None = None
 
 
 @dataclass
@@ -142,35 +155,34 @@ class _PendingRun:
     aliases: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
 
 
-def _iter_members(source: Path):
+def _iter_members(source: Path, stats: _ArchiveStats):
     """Yield ``(path, kind, payload)`` for a tarball or an extracted directory.
 
     ``kind`` is ``"file"`` (payload is bytes) or ``"link"`` (payload is the
-    link target, relative to the containing directory).
+    link target, relative to the containing directory). Once a tarball is
+    exhausted, ``stats`` holds its digest and size; a directory has neither.
     """
-    _iter_members.digest = None
-    _iter_members.size = None
     if source.is_dir():
         yield from _iter_directory(source)
         return
 
-    reader = _HashingReader(open(source, "rb"))
-    try:
-        with tarfile.open(fileobj=reader, mode="r|gz") as archive:
+    with open(source, "rb") as handle:
+        reader = _HashingReader(handle)
+        # typeshed wants a full file object; tarfile only ever calls read().
+        with tarfile.open(fileobj=reader, mode="r|gz") as archive:  # type: ignore[call-overload]
             for member in archive:
                 if member.issym() or member.islnk():
                     yield member.name, "link", os.path.basename(member.linkname)
                 elif member.isfile():
-                    handle = archive.extractfile(member)
-                    yield member.name, "file", handle.read()
+                    extracted = archive.extractfile(member)
+                    assert extracted is not None  # isfile() members always extract
+                    yield member.name, "file", extracted.read()
         # tarfile stops at the end-of-archive marker; read the trailing
         # padding too so the digest matches sha256sum(1) on the whole file.
         while reader.read(1 << 20):
             pass
-    finally:
-        reader.close()
-    _iter_members.digest = reader.digest.hexdigest()
-    _iter_members.size = reader.bytes_read
+    stats.sha256 = reader.digest.hexdigest()
+    stats.size = reader.bytes_read
 
 
 def _iter_directory(root: Path):
@@ -334,7 +346,8 @@ def build(
             if progress:
                 progress(report)
 
-    members = _iter_members(archive) if archive is not None else ()
+    stats = _ArchiveStats()
+    members = _iter_members(archive, stats) if archive is not None else ()
     for path, kind, payload in members:
         split = split_member_path(path)
         if split is None:
@@ -405,12 +418,11 @@ def build(
 
     flush()
 
-    digest = getattr(_iter_members, "digest", None)
-    if digest:
+    if stats.sha256:
         with connection:
             connection.execute(
                 "UPDATE dataset SET archive_sha256 = ?, archive_bytes = ? WHERE id = ?",
-                (digest, getattr(_iter_members, "size", None), dataset_id),
+                (stats.sha256, stats.size, dataset_id),
             )
 
     report.unmatched_summary = [

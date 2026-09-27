@@ -7,9 +7,11 @@ waveform blobs come back as numpy arrays.  For anything analytical, query the
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Self
 
 import numpy as np
 
@@ -51,12 +53,12 @@ class Waveform:
 class SummitDB:
     """Open a database built by :func:`tbacss.build.build`."""
 
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | os.PathLike[str]):
         self.path = Path(path)
         self.connection = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True)
         self.connection.row_factory = sqlite3.Row
 
-    def __enter__(self) -> SummitDB:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc) -> None:

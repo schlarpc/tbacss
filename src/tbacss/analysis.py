@@ -181,7 +181,7 @@ def shot_metrics(
     times_ms = (np.arange(window.size) * dt + start * dt) * 1000.0
     peak_stop = _oct_round(PEAK_STOP_S * sample_rate)
 
-    integral = cumulative_trapezoid(window, times_ms, initial=0.0)
+    integral = cumulative_trapezoid(window, times_ms, initial=0)
     trough = int(np.argmin(integral[:peak_stop]))
     # Octave's max(Q(1:Imp_Stop_ROW2)) is inclusive of the trough index.
     impulse = float(np.max(integral[: trough + 1]))

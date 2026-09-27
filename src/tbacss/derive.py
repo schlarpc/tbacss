@@ -209,4 +209,4 @@ def indistinguishable(
     if a_sem is None or b_sem is None:
         return False
     combined = (a_sem**2 + b_sem**2) ** 0.5
-    return abs(a_mean - b_mean) < sigma * combined
+    return bool(abs(a_mean - b_mean) < sigma * combined)

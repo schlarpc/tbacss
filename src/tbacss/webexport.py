@@ -127,8 +127,10 @@ class PublishReport:
         lines += [
             f"{'TOTAL':22}{total:14,}{total / 1e6:9.2f}",
             "",
-            f"shipped on first load: {eager / 1024:.0f} KB uncompressed"
-            " (the .bin files are range-fetched on demand)",
+            (
+                f"shipped on first load: {eager / 1024:.0f} KB uncompressed"
+                " (the .bin files are range-fetched on demand)"
+            ),
         ]
         return "\n".join(lines)
 
@@ -253,9 +255,9 @@ def publish(
         catalog: dict = {"n": len(runs), "columns": {}, "dictionaries": {}}
         catalog["ids"] = [r["test_run_id"] for r in runs]
         for column in _TEXT_COLUMNS:
-            dictionary, codes = _encode_text_column([r[column] for r in runs])
+            dictionary, encoded = _encode_text_column([r[column] for r in runs])
             catalog["dictionaries"][column] = dictionary
-            catalog["columns"][column] = codes
+            catalog["columns"][column] = encoded
         for column in _NUMERIC_COLUMNS:
             catalog["columns"][column] = _finite([r[column] for r in runs])
 
@@ -312,17 +314,14 @@ def publish(
                 continue
             table = stats[metric]
             catalog["columns"][f"{column}_sem"] = _finite(
-                [
-                    (table.get((run_id, mic)).sem if table.get((run_id, mic)) else None)
-                    for run_id in ids
-                ]
+                [(found.sem if (found := table.get((run_id, mic))) else None) for run_id in ids]
             )
 
         pop = stats["peak_dba"]
         for column, mic in (("se_first_round_pop", "SE"), ("ml_first_round_pop", "ML")):
             catalog["columns"][column] = _finite(
                 [
-                    (pop.get((run_id, mic)).first_round_pop if pop.get((run_id, mic)) else None)
+                    (found.first_round_pop if (found := pop.get((run_id, mic))) else None)
                     for run_id in ids
                 ]
             )
@@ -524,7 +523,7 @@ def _write_bands(out: Path, bands: dict, run_ids: list[int]) -> None:
     payload: dict[str, dict[str, list]] = {}
     for (run_id, mic), entry in bands.items():
         payload.setdefault(str(run_id), {})[mic] = [
-            None if v != v else round(float(v), 1) for v in entry["levels"]
+            None if math.isnan(v) else round(float(v), 1) for v in entry["levels"]
         ]
     (out / "bands.json").write_text(
         json.dumps(
@@ -557,7 +556,9 @@ def _write_json(out: Path, catalog, shot_table, waveform_index) -> None:
         (out / name).write_text(json.dumps(payload, separators=(",", ":")))
 
 
-def _measure(out: Path, report, expected_env: int, expected_raw: int):
+def _measure(
+    out: Path, report: PublishReport, expected_env: int, expected_raw: int
+) -> PublishReport:
     """Record the file sizes, and check the index's arithmetic lands on them.
 
     The index publishes lengths, not offsets, so a client rebuilds both by

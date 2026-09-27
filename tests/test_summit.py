@@ -45,6 +45,7 @@ from tbacss.summit import (
 )
 def test_parse_run_dir(path, suppressor, caliber, cartridge):
     run = parse_run_dir(path)
+    assert run is not None
     assert run.suppressor == suppressor
     assert run.caliber == caliber
     assert run.cartridge == cartridge
@@ -53,6 +54,7 @@ def test_parse_run_dir(path, suppressor, caliber, cartridge):
 
 def test_parse_run_dir_handles_the_2023_layout():
     run = parse_run_dir("2023_SUMMIT_RELEASE_SET/Day1/Resilient/Jolene (.30 on .308)")
+    assert run is not None
     assert run.event_label == "Day1"
     assert run.event_date is None  # 2023 labelled days, not dates
     assert run.manufacturer == "Resilient"
@@ -111,6 +113,7 @@ def test_split_member_path_rejects_other_shapes(path):
 
 def test_parse_run_dir_flags_the_unsuppressed_baseline():
     run = parse_run_dir("20250818/Bare/26in 300WM BA (.30 on .300WM-BA)")
+    assert run is not None
     assert run.is_baseline
 
 
@@ -129,17 +132,20 @@ def test_parse_run_dir_rejects_other_depths():
 )
 def test_parse_waveform_filename(name, signal, mic, suffix):
     parsed = parse_waveform_filename(name)
+    assert parsed is not None
     assert (parsed.signal, parsed.mic, parsed.suffix) == (signal, mic, suffix)
 
 
 def test_2023_third_mic_maps_to_225():
     parsed = parse_waveform_filename("Time Group_Expanded Time(225 Deg ASA) - Input.txt")
+    assert parsed is not None
     assert parsed.signal == "225 Deg ASA"
     assert parsed.mic == "225"
 
 
 def test_unknown_channel_has_no_mic_code():
     parsed = parse_waveform_filename("Time Group_Expanded Time(Left Ear) - Input.1")
+    assert parsed is not None
     assert parsed.signal == "Left Ear"
     assert parsed.mic is None
 

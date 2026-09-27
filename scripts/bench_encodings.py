@@ -72,24 +72,26 @@ def rice_bits(residual: np.ndarray, block: int = 4096) -> int:
         if chunk.size == 0:
             continue
         mean = max(float(chunk.mean()), 1e-9)
-        best = None
+        best: int | None = None
         # k near log2(mean) is optimal; check a small window around it.
         centre = max(0, int(np.log2(mean + 1)))
         for k in range(max(0, centre - 3), centre + 4):
             bits = int((chunk >> k).sum()) + chunk.size * (k + 1)
             if best is None or bits < best:
                 best = bits
+        assert best is not None  # the k window is never empty
         total += best + 8  # 8 bits to store k for the block
     return total
 
 
 def best_flac_like(codes: np.ndarray) -> tuple[int, int]:
     """Smallest (bytes, order) over FLAC's fixed predictors."""
-    best = None
+    best: tuple[int, int] | None = None
     for order in range(5):
         size = (rice_bits(fixed_predictor_residual(codes, order)) + 7) // 8
         if best is None or size < best[0]:
             best = (size, order)
+    assert best is not None
     return best
 
 
@@ -97,7 +99,9 @@ def best_flac_like(codes: np.ndarray) -> tuple[int, int]:
 
 
 def zstd(payload: bytes, level: int = 19) -> int:
-    out = subprocess.run(["zstd", f"-{level}", "-c", "-q"], input=payload, capture_output=True)
+    out = subprocess.run(
+        ["zstd", f"-{level}", "-c", "-q"], input=payload, capture_output=True, check=True
+    )
     return len(out.stdout)
 
 
@@ -142,7 +146,6 @@ def main() -> int:
             codes16, scale16 = to_int16(window)
             codes24, scale24 = to_int24(window)
             bytes16 = codes16.astype("<i2").tobytes()
-            bytes24 = codes24.astype("<i4").tobytes()
             f16 = window.astype(np.float16).tobytes()
             f32 = window.tobytes()
 

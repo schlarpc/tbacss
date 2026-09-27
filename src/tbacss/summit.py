@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import re
 from dataclasses import dataclass
+from typing import Literal
 
 __all__ = [
     "IGNORED_FILENAMES",
@@ -307,7 +308,7 @@ def parse_waveform_filename(name: str) -> WaveformName | None:
     )
 
 
-def parse_spec_filename(name: str) -> str | None | bool:
+def parse_spec_filename(name: str) -> str | None | Literal[False]:
     """Return the note prefix on a spec filename, ``None`` if bare, else False.
 
     ``False`` means the name is not a spec file at all.  The prefixes are how
