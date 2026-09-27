@@ -42,7 +42,7 @@ jobs:
       - if: steps.pin.outputs.pinned
         run: cp -rL result _site && chmod -R u+w _site
       - if: steps.pin.outputs.pinned
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
