@@ -16,6 +16,8 @@ concurrency:
 
 jobs:
   build:
+    # Nothing to deploy until scripts/release_data.sh has pinned a bundle.
+    if: hashFiles('web/data-release.json') != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6.0.2
