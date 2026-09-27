@@ -1,7 +1,8 @@
 /**
  * Drive the explorer in a real browser and assert it responds.
  *
- *   python3 scripts/serve.py &
+ *   npm run build && ln -s ../web/data dist/data
+ *   python3 scripts/serve.py --directory dist &
  *   chromium --headless --remote-debugging-port=9222 --no-sandbox about:blank &
  *   node scripts/ui_smoke.mjs [url] [width] [height]
  *

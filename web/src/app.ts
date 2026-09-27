@@ -16,9 +16,35 @@ import {
   analyse,
   toDb,
   LEQ_TRIGGER_PA,
-} from './tbacss.js';
+} from './tbacss.ts';
+import type {
+  Analysis,
+  Bands,
+  Bundle,
+  Column,
+  Direction,
+  Envelope,
+  Range,
+  Spec,
+  WaveformEntry,
+} from './tbacss.ts';
 
-const $ = (id) => document.getElementById(id);
+/**
+ * The element with `id`, checked to be a `type`.
+ *
+ * Every id looked up here is in index.html, so a missing one is a bug in the
+ * page rather than something to handle -- throw, naming it, instead of
+ * carrying a null around to fail somewhere less obvious.
+ */
+function $(id: string): HTMLElement;
+function $<T extends HTMLElement>(id: string, type: abstract new () => T): T;
+function $(id: string, type: abstract new () => HTMLElement = HTMLElement): HTMLElement {
+  const element = document.getElementById(id);
+  if (!(element instanceof type)) {
+    throw new Error(element ? `#${id} is not a ${type.name}` : `no element #${id}`);
+  }
+  return element;
+}
 const P0 = 20e-6;
 
 /**
@@ -38,8 +64,16 @@ const P0 = 20e-6;
 const MINIMISE = 'min';
 const MAXIMISE = 'max';
 
+/** Yaw and pitch of the 3D view, in radians. */
+interface View {
+  yaw: number;
+  pitch: number;
+}
+
 /** Starting yaw/pitch for the 3D view, in radians. */
-const DEFAULT_VIEW_INIT = { yaw: -0.62, pitch: 0.42 };
+const DEFAULT_VIEW_INIT: View = { yaw: -0.62, pitch: 0.42 };
+
+type Measure = [key: string, label: string, better: Direction | null, group: string];
 
 /**
  * `[key, label, better, group]`.
@@ -51,7 +85,7 @@ const DEFAULT_VIEW_INIT = { yaw: -0.62, pitch: 0.42 };
  * name repeated. The menu prints the group once as a heading and strips it off
  * the options underneath, so what remains is the part that differs.
  */
-const MEASURES = [
+const MEASURES: Measure[] = [
   ['se_peak_dba', "shooter's ear, peak dBA", MINIMISE, "Shooter's ear"],
   ['se_peak_db', "shooter's ear, peak dB", MINIMISE, "Shooter's ear"],
   ['se_peak_leq10ms_dba', "shooter's ear, Leq(10ms) dBA", MINIMISE, "Shooter's ear"],
@@ -98,8 +132,11 @@ const BETTER = new Map(MEASURES.map(([key, , better]) => [key, better]));
 
 const MEASURE_GROUP = new Map(MEASURES.map(([key, , , group]) => [key, group]));
 
+/** A measure's full name, for places that need a string whatever the key. */
+const labelOf = (key: string) => MEASURE_LABEL.get(key) ?? key;
+
 /** The part of a label the group heading above it does not already say. */
-function shortLabel(label, group) {
+function shortLabel(label: string, group: string): string {
   const prefix = `${group.toLowerCase()}, `;
   return label.toLowerCase().startsWith(prefix) ? label.slice(prefix.length) : label;
 }
@@ -112,22 +149,25 @@ function shortLabel(label, group) {
  * at two different mics, so "peak dBA" on both would be worse than useless.
  * There is no way to style the two states apart, so the text moves instead.
  */
-function syncAxisLabels(select) {
+function syncAxisLabels(select: HTMLSelectElement): void {
   for (const option of select.options) {
     const full = MEASURE_LABEL.get(option.value);
-    if (!full) continue; // the Z axis's "(none)"
+    const group = MEASURE_GROUP.get(option.value);
+    if (!full || group === undefined) continue; // the Z axis's "(none)"
     option.textContent = option.selected
       ? full
-      : shortLabel(full, MEASURE_GROUP.get(option.value));
+      : shortLabel(full, group);
   }
 }
 
 /** How to say a direction in a sentence. */
-const comparative = (key) => (BETTER.get(key) === MAXIMISE ? 'higher' : 'lower');
+const comparative = (key: string) => (BETTER.get(key) === MAXIMISE ? 'higher' : 'lower');
+
+type TableColumn = [key: string, header: string, numeric: boolean, optional: boolean];
 
 // [key, header, numeric, optional] -- optional columns are hidden by CSS on a
 // narrow screen rather than forcing a twelve-column horizontal scroll.
-const TABLE_COLUMNS = [
+const TABLE_COLUMNS: TableColumn[] = [
   ['year', 'Year', true, false],
   ['manufacturer', 'Maker', false, false],
   ['suppressor', 'Model', false, false],
@@ -143,7 +183,64 @@ const TABLE_COLUMNS = [
 ];
 const MAX_TABLE_ROWS = 400;
 
-const state = {
+/** [start, end], in whatever unit the axis is in. */
+type Domain = [number, number];
+
+/** A plot's drawing rectangle, in CSS pixels. */
+interface Box {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** Where a run landed on the scatter at the last paint, for hit-testing. */
+interface ScatterPoint {
+  i: number;
+  x: number;
+  y: number;
+  depth?: number;
+}
+
+/** A shot drawn at full rate, with the analysis the plots mark up. */
+interface WaveRecord {
+  entry: WaveformEntry;
+  values: Float32Array;
+  dt: number;
+  analysis: Analysis<Float32Array>;
+}
+
+interface State {
+  bundle: Bundle | null;
+  mask: Uint8Array | null;
+  visible: number[];
+  frontier: Set<number>;
+  selectedRun: number | null;
+  selectedWaveform: number | null;
+  envelopes: Envelope[] | null;
+  sort: { column: string; direction: number };
+  frontierFirst: boolean;
+  hover: number | null;
+  pinned: number | null;
+  filtersOpen: boolean;
+  zKey: string | null;
+  view: View;
+  /** Whether the last 2D paint drew any error bars. */
+  showingBars: boolean;
+  wave: {
+    view: Domain | null;
+    auto: Domain | null;
+    full: Domain | null;
+    hover: number | null;
+    pinned: number | null;
+    record: WaveRecord | null;
+    box: Box | null;
+    lastX: number | null;
+    lastY: number | null;
+  };
+}
+
+const state: State = {
   bundle: null,
   mask: null,
   visible: [],
@@ -165,6 +262,7 @@ const state = {
   filtersOpen: false,
   zKey: null,
   view: { ...DEFAULT_VIEW_INIT },
+  showingBars: false,
 
   /**
    * The waveform card's own view state.
@@ -189,11 +287,31 @@ const state = {
 
 /* ------------------------------------------------------------------ helpers */
 
-const css = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
+const css = (name: string) => getComputedStyle(document.body).getPropertyValue(name).trim();
+
+/** The loaded bundle. Everything that reads it runs after `main` has loaded it. */
+function bundle(): Bundle {
+  if (!state.bundle) throw new Error('the bundle has not loaded');
+  return state.bundle;
+}
+
+/** A catalog column the page relies on: an axis measure, a table column. */
+function columnOf(key: string): Column {
+  const column = bundle().catalog.columns[key];
+  if (!column) throw new Error(`no column ${key}`);
+  return column;
+}
+
+/** A dictionary-encoded catalog column's strings. */
+function dictionaryOf(key: string): string[] {
+  const dictionary = bundle().catalog.dictionaries[key];
+  if (!dictionary) throw new Error(`no dictionary for ${key}`);
+  return dictionary;
+}
 
 /** Standard error of a published mean, if the per-shot figures give one. */
-function semOf(key, index) {
-  const column = state.bundle.catalog.columns[`${key}_sem`];
+function semOf(key: string, index: number): number | null {
+  const column = bundle().catalog.columns[`${key}_sem`];
   if (!column) return null;
   const value = column[index];
   return Number.isNaN(value) ? null : value;
@@ -206,14 +324,23 @@ function semOf(key, index) {
  * conservative because the failure this prevents is reading a 0.2 dB gap as a
  * ranking.
  */
-function indistinguishable(aMean, aSem, bMean, bSem, sigma = 2) {
+function indistinguishable(
+  aMean: number,
+  aSem: number | null,
+  bMean: number,
+  bSem: number | null,
+  sigma = 2,
+): boolean {
   if (aSem === null || bSem === null) return false;
   return Math.abs(aMean - bMean) < sigma * Math.hypot(aSem, bSem);
 }
 
-function fmt(value, digits = 2) {
+function fmt(value: number | null, digits = 2): string {
   return value === null || Number.isNaN(value) ? '—' : value.toFixed(digits);
 }
+
+/** What a thrown value has to say for itself. */
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
  * A readable name for a host code.
@@ -222,8 +349,8 @@ function fmt(value, digits = 2) {
  * so `publish` ships the transcription and this reads it. An undocumented code
  * falls back to itself rather than inventing a name.
  */
-function hostLabel(code) {
-  return state.bundle?.catalog.hosts?.[code]?.label ?? String(code);
+function hostLabel(code: string): string {
+  return state.bundle?.catalog.hosts[code]?.label ?? String(code);
 }
 
 /**
@@ -232,22 +359,22 @@ function hostLabel(code) {
  * Published in report prose rather than the CSV, so a tool built on the CSV
  * alone would rank suppressors on figures TBAC says to disregard.
  */
-function caveatFor(index) {
-  const { catalog } = state.bundle;
+function caveatFor(index: number): string | null {
+  const { catalog } = bundle();
   const code = catalog.columns.caveat?.[index];
   return code === undefined || code < 0
     ? null
-    : catalog.dictionaries.caveat[code] ?? null;
+    : catalog.dictionaries.caveat?.[code] ?? null;
 }
 
-function hostDescription(code) {
-  return state.bundle?.catalog.hosts?.[code]?.description ?? null;
+function hostDescription(code: string): string | null {
+  return state.bundle?.catalog.hosts[code]?.description ?? null;
 }
 
-function runLabel(index) {
-  const c = state.bundle.catalog;
-  const maker = c.dictionaries.manufacturer[c.columns.manufacturer[index]];
-  const model = c.dictionaries.suppressor[c.columns.suppressor[index]];
+function runLabel(index: number): string {
+  const c = bundle().catalog;
+  const maker = dictionaryOf('manufacturer')[c.columns.manufacturer[index]];
+  const model = dictionaryOf('suppressor')[c.columns.suppressor[index]];
   return `${maker} ${model}`;
 }
 
@@ -255,7 +382,7 @@ const NARROW = '(max-width: 720px)';
 const isNarrow = () => window.matchMedia(NARROW).matches;
 
 /** Plot heights shrink on a phone so a chart still fits a screen. */
-const PLOT_HEIGHTS = {
+const PLOT_HEIGHTS: Record<string, [number, number] | undefined> = {
   scatter: [420, 300],
   spectrum: [170, 140],
   wave: [300, 210],
@@ -264,7 +391,7 @@ const PLOT_HEIGHTS = {
 };
 
 /** Size a canvas to its layout box at device pixel ratio. */
-function prepare(canvas) {
+function prepare(canvas: HTMLCanvasElement) {
   const ratio = window.devicePixelRatio || 1;
   const width = canvas.clientWidth;
   const sizes = PLOT_HEIGHTS[canvas.id];
@@ -273,27 +400,45 @@ function prepare(canvas) {
   canvas.height = Math.round(height * ratio);
   canvas.style.height = `${height}px`;
   const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error(`no 2D context for #${canvas.id}`);
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   ctx.clearRect(0, 0, width, height);
   return { ctx, width, height };
 }
 
+/** The box a canvas's overlays are positioned against. */
+function wrapRect(canvas: HTMLCanvasElement): DOMRect {
+  return (canvas.parentElement ?? canvas).getBoundingClientRect();
+}
+
 /** Nice round tick positions covering [lo, hi]. */
-function ticks(lo, hi, count = 5) {
+function ticks(lo: number, hi: number, count = 5): number[] {
   if (!(hi > lo)) return [lo];
   const raw = (hi - lo) / count;
   const magnitude = 10 ** Math.floor(Math.log10(raw));
   const step = [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((s) => s >= raw) ?? magnitude * 10;
-  const out = [];
+  const out: number[] = [];
   for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(v);
   return out;
 }
+
+/** Value to screen coordinate along one axis. */
+type Scale = (v: number) => number;
 
 /**
  * Axes, hairline grid and labels shared by every plot here.
  * Gridlines and rules are solid hairlines one shade off the surface.
  */
-function axes(ctx, box, xDomain, yDomain, xLabel, yLabel, xDigits = 0, yDigits = 0) {
+function axes(
+  ctx: CanvasRenderingContext2D,
+  box: Box,
+  xDomain: Domain,
+  yDomain: Domain,
+  xLabel: string,
+  yLabel: string,
+  xDigits = 0,
+  yDigits = 0,
+): { px: Scale; py: Scale } {
   const { left, top, right, bottom } = box;
   ctx.save();
   ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
@@ -301,8 +446,8 @@ function axes(ctx, box, xDomain, yDomain, xLabel, yLabel, xDigits = 0, yDigits =
 
   const xs = ticks(xDomain[0], xDomain[1]);
   const ys = ticks(yDomain[0], yDomain[1]);
-  const px = (v) => left + ((v - xDomain[0]) / (xDomain[1] - xDomain[0])) * (right - left);
-  const py = (v) => bottom - ((v - yDomain[0]) / (yDomain[1] - yDomain[0])) * (bottom - top);
+  const px = (v: number) => left + ((v - xDomain[0]) / (xDomain[1] - xDomain[0])) * (right - left);
+  const py = (v: number) => bottom - ((v - yDomain[0]) / (yDomain[1] - yDomain[0])) * (bottom - top);
 
   ctx.strokeStyle = css('--grid');
   ctx.beginPath();
@@ -345,14 +490,19 @@ function axes(ctx, box, xDomain, yDomain, xLabel, yLabel, xDigits = 0, yDigits =
 
 /* ------------------------------------------------------------------ filters */
 
-function buildFacet(id, values, counts, describe = null) {
+function buildFacet<V extends string | number>(
+  id: string,
+  values: V[],
+  counts: Map<V, number> | null,
+  describe: ((value: V) => string) | null = null,
+): void {
   const host = $(id);
   host.textContent = '';
   for (const value of values) {
     const label = document.createElement('label');
     const box = document.createElement('input');
     box.type = 'checkbox';
-    box.value = value;
+    box.value = String(value);
     box.addEventListener('change', refilter);
 
     const shown = describe ? describe(value) : String(value);
@@ -366,16 +516,16 @@ function buildFacet(id, values, counts, describe = null) {
   }
 }
 
-const checked = (id) =>
-  [...$(id).querySelectorAll('input:checked')].map((box) => box.value);
+const checked = (id: string) =>
+  [...$(id).querySelectorAll<HTMLInputElement>('input:checked')].map((box) => box.value);
 
-function numberOr(id, fallback) {
-  const value = Number.parseFloat($(id).value);
+function numberOr(id: string, fallback: number | null): number | null {
+  const value = Number.parseFloat($(id, HTMLInputElement).value);
   return Number.isFinite(value) ? value : fallback;
 }
 
-function currentSpec() {
-  const spec = {};
+function currentSpec(): Spec {
+  const spec: Spec = {};
   const years = checked('facet-year').map(Number);
   if (years.length) spec.year = [Math.min(...years), Math.max(...years)];
 
@@ -385,14 +535,15 @@ function currentSpec() {
     if (picked.length) spec[column] = new Set(picked);
   }
 
-  const weight = [numberOr('min-weight', null), numberOr('max-weight', null)];
+  const weight: Range = [numberOr('min-weight', null), numberOr('max-weight', null)];
   if (weight[0] !== null || weight[1] !== null) spec.weight_oz = weight;
-  const length = [numberOr('min-length', null), numberOr('max-length', null)];
+  const length: Range = [numberOr('min-length', null), numberOr('max-length', null)];
   if (length[0] !== null || length[1] !== null) spec.length_in = length;
   return spec;
 }
 
-const FACETS = [
+/** `[column, facet id, badge id]`. */
+const FACETS: [column: string, facetId: string, countId: string][] = [
   ['year', 'facet-year', 'count-year'],
   ['caliber', 'facet-caliber', 'count-caliber'],
   ['cartridge', 'facet-cartridge', 'count-cartridge'],
@@ -405,7 +556,7 @@ const FACETS = [
  * Show how many boxes are ticked per dimension, and in total on the collapsed
  * toggle -- otherwise a phone user cannot tell a filtered view from a full one.
  */
-function updateFilterBadges() {
+function updateFilterBadges(): void {
   let total = 0;
   for (const [, facetId, countId] of FACETS) {
     const count = checked(facetId).length;
@@ -415,22 +566,22 @@ function updateFilterBadges() {
     badge.hidden = count === 0;
   }
   for (const id of ['q', 'min-weight', 'max-weight', 'min-length', 'max-length']) {
-    if ($(id).value.trim()) total++;
+    if ($(id, HTMLInputElement).value.trim()) total++;
   }
-  if ($('baselines').value !== 'hide') total++;
+  if ($('baselines', HTMLSelectElement).value !== 'hide') total++;
 
   const badge = $('filter-count');
   badge.textContent = String(total);
   badge.hidden = total === 0;
 }
 
-function refilter() {
-  const { catalog } = state.bundle;
+function refilter(): void {
+  const { catalog } = bundle();
   const spec = currentSpec();
 
   // A multi-year selection is not a range, so apply years as a set test after
   // the generic pass rather than pretending [min,max] covers it.
-  let mask = selection(catalog, spec);
+  const mask = selection(catalog, spec);
 
   const years = checked('facet-year').map(Number);
   if (years.length) {
@@ -440,7 +591,7 @@ function refilter() {
     }
   }
 
-  const baselines = $('baselines').value;
+  const baselines = $('baselines', HTMLSelectElement).value;
   if (baselines !== 'show') {
     const want = baselines === 'only' ? 1 : 0;
     for (let i = 0; i < catalog.n; i++) {
@@ -448,7 +599,7 @@ function refilter() {
     }
   }
 
-  const query = $('q').value.trim().toLowerCase();
+  const query = $('q', HTMLInputElement).value.trim().toLowerCase();
   if (query) {
     for (let i = 0; i < catalog.n; i++) {
       if (mask[i] && !runLabel(i).toLowerCase().includes(query)) mask[i] = 0;
@@ -462,7 +613,7 @@ function refilter() {
   // Axes that are dimensions rather than objectives -- year, host barrel --
   // drop out of the frontier instead of cancelling it, so plotting against one
   // still answers "which of these is not beaten on the rest".
-  const active = [$('axis-x').value, $('axis-y').value];
+  const active = [$('axis-x', HTMLSelectElement).value, $('axis-y', HTMLSelectElement).value];
   if (state.zKey) active.push(state.zKey);
   const objectives = active.filter((key) => BETTER.get(key));
   const dimensions = active.filter((key) => !BETTER.get(key));
@@ -472,7 +623,7 @@ function refilter() {
   // on this plot, so it is not "on this plot's frontier" either.
   const plottable = Uint8Array.from(mask);
   for (const key of active) {
-    const column = catalog.columns[key];
+    const column = columnOf(key);
     for (let i = 0; i < catalog.n; i++) {
       if (plottable[i] && Number.isNaN(column[i])) plottable[i] = 0;
     }
@@ -482,7 +633,10 @@ function refilter() {
     ? new Set(
         paretoFront(
           catalog,
-          objectives.map((key) => ({ column: key, direction: BETTER.get(key) })),
+          objectives.flatMap((key) => {
+            const direction = BETTER.get(key);
+            return direction ? [{ column: key, direction }] : [];
+          }),
           plottable,
         ),
       )
@@ -511,9 +665,9 @@ function refilter() {
 
 /* -------------------------------------------------------------------- tiles */
 
-function renderTiles() {
-  const { catalog } = state.bundle;
-  const makers = new Set();
+function renderTiles(): void {
+  const { catalog } = bundle();
+  const makers = new Set<number>();
   let withWaveforms = 0;
   for (const i of state.visible) {
     makers.add(catalog.columns.manufacturer[i]);
@@ -532,10 +686,10 @@ function renderTiles() {
 
 /* ------------------------------------------------------------------ scatter */
 
-let scatterPoints = [];
+let scatterPoints: ScatterPoint[] = [];
 
 /** Smallest and largest actual values of a column over the visible rows. */
-function range(values, rows) {
+function range(values: ArrayLike<number>, rows: number[]): Domain {
   let lo = Infinity;
   let hi = -Infinity;
   for (const i of rows) {
@@ -546,7 +700,7 @@ function range(values, rows) {
 }
 
 /** The same, padded so marks do not sit on the frame. */
-function extent(values, rows) {
+function extent(values: ArrayLike<number>, rows: number[]): Domain {
   const [lo, hi] = range(values, rows);
   const span = hi - lo || Math.abs(hi) || 1;
   return [lo - span * 0.06, hi + span * 0.06];
@@ -559,7 +713,7 @@ function extent(values, rows) {
  * it goes -- so it gets an outline in the surface colour instead of being
  * moved somewhere it no longer points at.
  */
-function haloText(ctx, text, x, y) {
+function haloText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number): void {
   ctx.lineJoin = 'round';
   ctx.lineWidth = 3;
   ctx.strokeStyle = css('--surface-1');
@@ -573,7 +727,7 @@ function haloText(ctx, text, x, y) {
  * Returns screen offsets plus a depth, so points can be drawn back to front
  * and dimmed with distance -- without that the cloud reads as flat.
  */
-function project(x, y, z, view) {
+function project(x: number, y: number, z: number, view: View) {
   const cy = Math.cos(view.yaw);
   const sy = Math.sin(view.yaw);
   const cp = Math.cos(view.pitch);
@@ -583,26 +737,25 @@ function project(x, y, z, view) {
   return { x: rx, y: y * cp - rz * sp, depth: y * sp + rz * cp };
 }
 
-const CUBE_EDGES = [
+const CUBE_EDGES: [number, number][] = [
   [0, 1], [1, 3], [3, 2], [2, 0],
   [4, 5], [5, 7], [7, 6], [6, 4],
   [0, 4], [1, 5], [2, 6], [3, 7],
 ];
-const CUBE_CORNERS = [
+const CUBE_CORNERS: [number, number, number][] = [
   [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [0.5, 0.5, -0.5],
   [-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [-0.5, 0.5, 0.5], [0.5, 0.5, 0.5],
 ];
 
-function renderScatter() {
-  const canvas = $('scatter');
+function renderScatter(): void {
+  const canvas = $('scatter', HTMLCanvasElement);
   const { ctx, width, height } = prepare(canvas);
-  const { catalog } = state.bundle;
-  const xKey = $('axis-x').value;
-  const yKey = $('axis-y').value;
+  const xKey = $('axis-x', HTMLSelectElement).value;
+  const yKey = $('axis-y', HTMLSelectElement).value;
   const zKey = state.zKey;
 
-  const columns = [catalog.columns[xKey], catalog.columns[yKey]];
-  if (zKey) columns.push(catalog.columns[zKey]);
+  const columns = [columnOf(xKey), columnOf(yKey)];
+  if (zKey) columns.push(columnOf(zKey));
   const usable = state.visible.filter((i) => columns.every((c) => !Number.isNaN(c[i])));
 
   scatterPoints = [];
@@ -641,7 +794,17 @@ function renderScatter() {
  * in muted ink; a *filled* mark means selected, and nothing else. Emphasis
  * rather than identity, so filtering never repaints a survivor.
  */
-function drawPoint(ctx, x, y, { frontier, selected, scale = 1, alpha = 1 }) {
+function drawPoint(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  { frontier, selected, scale = 1, alpha = 1 }: {
+    frontier: boolean;
+    selected: boolean;
+    scale?: number;
+    alpha?: number;
+  },
+): void {
   ctx.globalAlpha = alpha;
   ctx.beginPath();
   ctx.arc(x, y, (selected ? 6 : frontier ? 4.5 : 3) * scale, 0, Math.PI * 2);
@@ -659,17 +822,22 @@ function drawPoint(ctx, x, y, { frontier, selected, scale = 1, alpha = 1 }) {
   ctx.globalAlpha = 1;
 }
 
-const axisDigits = (key) =>
+const axisDigits = (key: string) =>
   key === 'year' ? 0 : key.includes('_in') || key === 'weight_oz' ? 1 : 0;
 
-function renderScatter2D(ctx, width, height, usable, [xKey, yKey]) {
-  const { catalog } = state.bundle;
-  const xs = catalog.columns[xKey];
-  const ys = catalog.columns[yKey];
+function renderScatter2D(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  usable: number[],
+  [xKey, yKey]: [string, string],
+): void {
+  const xs = columnOf(xKey);
+  const ys = columnOf(yKey);
   const box = { left: 54, top: 22, right: width - 12, bottom: height - 34 };
   const { px, py } = axes(
     ctx, box, extent(xs, usable), extent(ys, usable),
-    MEASURE_LABEL.get(xKey), MEASURE_LABEL.get(yKey),
+    labelOf(xKey), labelOf(yKey),
     axisDigits(xKey), axisDigits(yKey),
   );
 
@@ -715,21 +883,26 @@ function renderScatter2D(ctx, width, height, usable, [xKey, yKey]) {
   state.showingBars = bars;
 }
 
-function renderScatter3D(ctx, width, height, usable, keys) {
+function renderScatter3D(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  usable: number[],
+  keys: [string, string, string],
+): void {
   // A bar along one of three projected axes reads as a stray line segment, so
   // the 3D view has none -- and must not keep the 2D view's legend entry.
   state.showingBars = false;
   $('bar-legend').hidden = true;
-  const { catalog } = state.bundle;
-  const cols = keys.map((k) => catalog.columns[k]);
+  const cols = keys.map((k) => columnOf(k));
   const domains = cols.map((c) => extent(c, usable));
   const ranges = cols.map((c) => range(c, usable));
-  const unit = (value, [lo, hi]) => (value - lo) / (hi - lo) - 0.5;
+  const unit = (value: number, [lo, hi]: Domain) => (value - lo) / (hi - lo) - 0.5;
 
   const centreX = width / 2;
   const centreY = height / 2 - 6;
   const scale = Math.min(width, height) * 0.62;
-  const toScreen = (p) => ({ x: centreX + p.x * scale, y: centreY - p.y * scale });
+  const toScreen = (p: { x: number; y: number }) => ({ x: centreX + p.x * scale, y: centreY - p.y * scale });
 
   // Cube first, so points sit on top of the frame.
   const corners = CUBE_CORNERS.map(([x, y, z]) =>
@@ -766,7 +939,7 @@ function renderScatter3D(ctx, width, height, usable, keys) {
     const lx = mid.x + (away.x / length) * 34;
     const ly = mid.y + (away.y / length) * 34;
     ctx.fillStyle = css('--text-secondary');
-    haloText(ctx, MEASURE_LABEL.get(keys[axis]), lx, ly);
+    haloText(ctx, labelOf(keys[axis]), lx, ly);
     // Quote the data's own range, not the padded drawing domain -- padding a
     // weight down to -1.8 oz reads as a measurement, and it is not one.
     ctx.fillStyle = css('--text-muted');
@@ -807,12 +980,17 @@ function renderScatter3D(ctx, width, height, usable, keys) {
  * Names come from the published bundle, which is ultimately somebody's CSV, so
  * they are inserted as text and never as markup.
  */
-function showTooltip(tip, canvas, point, pinned = false) {
-  const { catalog } = state.bundle;
+function showTooltip(
+  tip: HTMLElement,
+  canvas: HTMLCanvasElement,
+  point: ScatterPoint,
+  pinned = false,
+): void {
+  const { catalog } = bundle();
   const i = point.i;
-  const xKey = $('axis-x').value;
-  const yKey = $('axis-y').value;
-  const dict = (name) => catalog.dictionaries[name][catalog.columns[name][i]] ?? '—';
+  const xKey = $('axis-x', HTMLSelectElement).value;
+  const yKey = $('axis-y', HTMLSelectElement).value;
+  const dict = (name: string) => dictionaryOf(name)[columnOf(name)[i]] ?? '—';
 
   tip.textContent = '';
   tip.classList.toggle('pinned', pinned);
@@ -839,11 +1017,11 @@ function showTooltip(tip, canvas, point, pinned = false) {
   if (description) {
     const gun = document.createElement('div');
     gun.className = 'dim';
-    const host = state.bundle.catalog.hosts?.[code] ?? {};
+    const host = catalog.hosts[code];
     // Say when a barrel length is the model's published spec rather than
     // something TBAC wrote down, so it is not mistaken for a measurement.
     const barrel =
-      host.barrel_source === 'model' ? ` (${host.barrel_in}" barrel, model spec)` : '';
+      host?.barrel_source === 'model' ? ` (${host.barrel_in}" barrel, model spec)` : '';
     gun.textContent = description + barrel;
     tip.append(gun);
   }
@@ -854,7 +1032,7 @@ function showTooltip(tip, canvas, point, pinned = false) {
     const line = document.createElement('div');
     line.append(document.createTextNode(`${MEASURE_LABEL.get(key)}: `));
     const value = document.createElement('strong');
-    value.textContent = fmt(catalog.columns[key][i]);
+    value.textContent = fmt(columnOf(key)[i]);
     line.append(value);
     const sem = semOf(key, i);
     if (sem !== null) {
@@ -870,7 +1048,7 @@ function showTooltip(tip, canvas, point, pinned = false) {
   // cannot actually be separated from.
   const ySem = semOf(yKey, i);
   if (ySem !== null) {
-    const column = catalog.columns[yKey];
+    const column = columnOf(yKey);
     let ties = 0;
     for (const j of state.visible) {
       if (j !== i && indistinguishable(column[i], ySem, column[j], semOf(yKey, j))) {
@@ -899,7 +1077,7 @@ function showTooltip(tip, canvas, point, pinned = false) {
   }
 
   tip.hidden = false;
-  const wrap = canvas.parentElement.getBoundingClientRect();
+  const wrap = wrapRect(canvas);
   tip.style.left = `${Math.max(4, Math.min(point.x + 14, wrap.width - tip.offsetWidth - 6))}px`;
   tip.style.top = `${Math.max(4, Math.min(point.y - 10, wrap.height - tip.offsetHeight - 4))}px`;
 }
@@ -911,7 +1089,7 @@ function showTooltip(tip, canvas, point, pinned = false) {
  * used to be is pointing at nothing. The traces below it are still the ones the
  * reader asked for, though, so the selection survives.
  */
-function dismissTooltip() {
+function dismissTooltip(): void {
   state.pinned = null;
   const tip = $('scatter-tip');
   tip.hidden = true;
@@ -923,18 +1101,18 @@ function dismissTooltip() {
  * the slice. Hover owns the readout while the cursor is over a point, so this
  * stays out of the way until the cursor is gone.
  */
-function syncPinned() {
+function syncPinned(): void {
   if (state.pinned === null || state.hover !== null) return;
   const point = scatterPoints.find((p) => p.i === state.pinned);
-  if (point) showTooltip($('scatter-tip'), $('scatter'), point, true);
+  if (point) showTooltip($('scatter-tip'), $('scatter', HTMLCanvasElement), point, true);
   else dismissTooltip();
 }
 
-function nearestPoint(event) {
+function nearestPoint(event: MouseEvent): ScatterPoint | null {
   const rect = $('scatter').getBoundingClientRect();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
-  let best = null;
+  let best: ScatterPoint | null = null;
   const reach = isNarrow() ? 34 : 26; // generous hit area, not a pinpoint target
   let bestDistance = reach * reach;
   for (const point of scatterPoints) {
@@ -947,15 +1125,19 @@ function nearestPoint(event) {
   return best;
 }
 
-function bindScatter() {
-  const canvas = $('scatter');
+/** Whether a click landed on a readout's close button. */
+const onClose = (event: Event) =>
+  event.target instanceof Element && event.target.closest('.tip-close') !== null;
+
+function bindScatter(): void {
+  const canvas = $('scatter', HTMLCanvasElement);
   const tip = $('scatter-tip');
 
   // The close button lives inside the readout, which is redrawn from scratch on
   // every hover, so the listener goes on the container once rather than on a
   // button that will not exist a moment later.
   tip.addEventListener('click', (event) => {
-    if (!event.target.closest('.tip-close')) return;
+    if (!onClose(event)) return;
     dismissTooltip();
     renderScatter();
   });
@@ -964,7 +1146,7 @@ function bindScatter() {
   // the readout, which then stays until it is dismissed.
   canvas.addEventListener('pointerup', (event) => {
     if (event.pointerType !== 'touch') return;
-    if (bindRotation.isDragging?.()) return;
+    if (bindRotation.isDragging()) return;
     const point = nearestPoint(event);
     if (!point) {
       dismissTooltip();
@@ -972,11 +1154,11 @@ function bindScatter() {
     }
     state.pinned = point.i;
     showTooltip(tip, canvas, point, true);
-    selectRun(point.i);
+    void selectRun(point.i);
   });
 
   canvas.addEventListener('pointermove', (event) => {
-    if (event.pointerType === 'touch' || bindRotation.isDragging?.()) return;
+    if (event.pointerType === 'touch' || bindRotation.isDragging()) return;
     const point = nearestPoint(event);
     state.hover = point ? point.i : null;
     if (point) showTooltip(tip, canvas, point, point.i === state.pinned);
@@ -997,8 +1179,8 @@ function bindScatter() {
 
   canvas.addEventListener('click', (event) => {
     // Touch already handled this on pointerup, and a drag is not a click.
-    if (event.pointerType === 'touch') return;
-    if (bindRotation.isDragging?.()) return;
+    if (event instanceof PointerEvent && event.pointerType === 'touch') return;
+    if (bindRotation.isDragging()) return;
     const point = nearestPoint(event);
     if (!point) {
       dismissTooltip();
@@ -1006,14 +1188,13 @@ function bindScatter() {
     }
     state.pinned = point.i;
     showTooltip(tip, canvas, point, true);
-    selectRun(point.i);
+    void selectRun(point.i);
   });
 }
 
 /* -------------------------------------------------------------------- table */
 
-function renderTable() {
-  const { catalog } = state.bundle;
+function renderTable(): void {
   const head = $('table-head');
   head.textContent = '';
   for (const [key, label, numeric, optional] of TABLE_COLUMNS) {
@@ -1034,19 +1215,20 @@ function renderTable() {
     head.append(th);
   }
 
+  const { catalog } = bundle();
   const key = state.sort.column;
-  const column = catalog.columns[key];
+  const column = columnOf(key);
   const dictionary = catalog.dictionaries[key];
 
   /** The chosen column, ignoring the frontier grouping. */
-  const byColumn = (a, b) => {
-    let left = column[a];
-    let right = column[b];
+  const byColumn = (a: number, b: number) => {
     if (dictionary) {
-      left = key === 'cartridge' ? hostLabel(dictionary[left] ?? '') : dictionary[left] ?? '';
-      right = key === 'cartridge' ? hostLabel(dictionary[right] ?? '') : dictionary[right] ?? '';
+      const left = key === 'cartridge' ? hostLabel(dictionary[column[a]] ?? '') : dictionary[column[a]] ?? '';
+      const right = key === 'cartridge' ? hostLabel(dictionary[column[b]] ?? '') : dictionary[column[b]] ?? '';
       return state.sort.direction * String(left).localeCompare(String(right));
     }
+    const left = column[a];
+    const right = column[b];
     // A missing value sorts last either way; it is not a small number.
     if (Number.isNaN(left)) return 1;
     if (Number.isNaN(right)) return -1;
@@ -1088,14 +1270,14 @@ function renderTable() {
       tr.title = `⚠ ${caveat}`;
     }
     if (state.selectedRun === i) tr.setAttribute('aria-selected', 'true');
-    tr.addEventListener('click', () => selectRun(i));
+    tr.addEventListener('click', () => void selectRun(i));
 
     for (const [columnKey, , numeric, optional] of TABLE_COLUMNS) {
       const td = document.createElement('td');
       if (numeric) td.className = 'num';
       if (optional) td.dataset.optional = '';
       const dict = catalog.dictionaries[columnKey];
-      const raw = catalog.columns[columnKey][i];
+      const raw = columnOf(columnKey)[i];
       if (dict) {
         const value = dict[raw] ?? '—';
         td.textContent = columnKey === 'cartridge' ? hostLabel(value) : value;
@@ -1115,28 +1297,28 @@ function renderTable() {
  * Spectra live in their own file and are only fetched when something needs to
  * draw one, so they cost nothing on first load.
  */
-async function loadBands(bundle) {
+async function loadBands(bundle: Bundle): Promise<Bands | null> {
   if (bundle.bands !== undefined) return bundle.bands;
   try {
     const version = bundle.version ?? '';
-    bundle.bands = await (await fetch(`${bundle.baseUrl}/bands.json${version}`)).json();
+    bundle.bands = (await (await fetch(`${bundle.baseUrl}/bands.json${version}`)).json()) as Bands;
   } catch {
     bundle.bands = null; // published without a band pass
   }
   return bundle.bands;
 }
 
-async function renderSpectrum(runId) {
+async function renderSpectrum(runId: number): Promise<void> {
   const wrap = $('spectrum-wrap');
-  const bands = await loadBands(state.bundle);
+  const bands = await loadBands(bundle());
   const spectra = bands?.runs?.[String(runId)];
-  if (!spectra) {
+  if (!bands || !spectra) {
     wrap.hidden = true;
     return;
   }
   wrap.hidden = false;
 
-  const { ctx, width, height } = prepare($('spectrum'));
+  const { ctx, width, height } = prepare($('spectrum', HTMLCanvasElement));
   const centres = bands.centres;
   const mics = Object.keys(spectra).sort();
 
@@ -1147,14 +1329,14 @@ async function renderSpectrum(runId) {
   // the shape a reader thinks they are looking at. The stored levels are
   // untouched: low_frequency_db and the like are energy sums and want widths in.
   const WIDTH_RATIO = 2 ** (1 / 6) - 2 ** (-1 / 6);
-  const perHz = (value, index) =>
+  const perHz = (value: number | null, index: number) =>
     value === null ? null : value - 10 * Math.log10(centres[index] * WIDTH_RATIO);
   const density = new Map(mics.map((mic) => [mic, spectra[mic].map(perHz)]));
 
   let lo = Infinity;
   let hi = -Infinity;
   for (const mic of mics) {
-    for (const value of density.get(mic)) {
+    for (const value of density.get(mic) ?? []) {
       if (value === null) continue;
       if (value < lo) lo = value;
       if (value > hi) hi = value;
@@ -1166,8 +1348,9 @@ async function renderSpectrum(runId) {
   // Log frequency: a third-octave scale is geometric, so equal spacing here
   // means equal spacing on screen.
   const logs = centres.map(Math.log10);
+  const lastLog = logs[logs.length - 1];
   const { py } = axes(
-    ctx, box, [logs[0], logs.at(-1)], [lo - 4, hi + 4],
+    ctx, box, [logs[0], lastLog], [lo - 4, hi + 4],
     'frequency, Hz', 'energy density, dB per Hz', 0, 0,
   );
   // Redraw x labels as frequencies rather than logarithms.
@@ -1177,19 +1360,19 @@ async function renderSpectrum(runId) {
   ctx.font = '11px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  const px = (l) =>
-    box.left + ((l - logs[0]) / (logs.at(-1) - logs[0])) * (box.right - box.left);
+  const px = (l: number) =>
+    box.left + ((l - logs[0]) / (lastLog - logs[0])) * (box.right - box.left);
   for (const f of [31.5, 125, 500, 2000, 8000]) {
     ctx.fillText(f >= 1000 ? `${f / 1000}k` : String(f), px(Math.log10(f)), box.bottom + 6);
   }
 
   for (const mic of mics) {
     ctx.beginPath();
-    ctx.strokeStyle = css(MIC_COLOR[mic] ?? '--series-1');
+    ctx.strokeStyle = css(micColor(mic));
     ctx.lineWidth = 2;
     ctx.lineJoin = 'round';
     let started = false;
-    density.get(mic).forEach((value, index) => {
+    (density.get(mic) ?? []).forEach((value, index) => {
       if (value === null) return;
       const x = px(logs[index]);
       const y = py(value);
@@ -1206,14 +1389,14 @@ async function renderSpectrum(runId) {
     item.className = 'item';
     const swatch = document.createElement('span');
     swatch.className = 'swatch';
-    swatch.style.background = `var(${MIC_COLOR[mic] ?? '--series-1'})`;
+    swatch.style.background = `var(${micColor(mic)})`;
     item.append(swatch, document.createTextNode(mic));
     legend.append(item);
   }
 }
 
 /** A quiet centred message on an otherwise empty plot. */
-function drawPlaceholder(canvas, message) {
+function drawPlaceholder(canvas: HTMLCanvasElement, message: string): void {
   const { ctx, width, height } = prepare(canvas);
   ctx.fillStyle = css('--text-muted');
   ctx.font = '13px system-ui, -apple-system, "Segoe UI", sans-serif';
@@ -1222,7 +1405,10 @@ function drawPlaceholder(canvas, message) {
   ctx.fillText(message, width / 2, height / 2);
 }
 
-const MIC_COLOR = { ML: '--series-1', MR: '--series-2', SE: '--series-3', 225: '--series-2' };
+const MIC_COLOR: Record<string, string | undefined> = { ML: '--series-1', MR: '--series-2', SE: '--series-3', 225: '--series-2' };
+
+/** The colour variable a mic is drawn in; an unknown mic borrows the first. */
+const micColor = (mic: string | null) => (mic === null ? undefined : MIC_COLOR[mic]) ?? '--series-1';
 
 /* ------------------------------------------------------------- wave framing
  *
@@ -1241,13 +1427,13 @@ const MIN_SPAN_MS = 0.05; // ~13 samples at 262 kHz; past this there is nothing 
 const MARK_MARGIN_MS = 2; // breathing room when a view is widened to reach a marker
 
 /** [start, end] of one record, in ms. */
-function recordSpan(entry) {
-  const t0 = state.bundle.waveforms.window_start_s * 1000;
+function recordSpan(entry: WaveformEntry): Domain {
+  const t0 = bundle().waveforms.window_start_s * 1000;
   return [t0, t0 + entry.n * entry.dt * 1000];
 }
 
 /** The union of every record's span, in ms. Runs mix 99 ms and 124 ms windows. */
-function fullSpan(records) {
+function fullSpan(records: Envelope[]): Domain {
   let lo = Infinity;
   let hi = -Infinity;
   for (const record of records) {
@@ -1265,7 +1451,7 @@ function fullSpan(records) {
  * record that never breaks 1 Pa (a very quiet can at the shooter's ear) falls
  * back to a fraction of its own peak so the framing still lands on the event.
  */
-function envelopeTrigger(record) {
+function envelopeTrigger(record: Envelope): number | null {
   const { values, buckets, entry } = record;
   const [t0, t1] = recordSpan(entry);
   const width = (t1 - t0) / buckets;
@@ -1278,7 +1464,7 @@ function envelopeTrigger(record) {
 }
 
 /** Opening view for a run: from just before the earliest arrival across its mics. */
-function autoWindow(records) {
+function autoWindow(records: Envelope[]): Domain {
   const [lo, hi] = fullSpan(records);
   let first = Infinity;
   for (const record of records) {
@@ -1290,7 +1476,7 @@ function autoWindow(records) {
   return [start, Math.min(hi, start + VIEW_SPAN_MS)];
 }
 
-const waveDomain = () => state.wave.view ?? state.wave.auto ?? [0, 1];
+const waveDomain = (): Domain => state.wave.view ?? state.wave.auto ?? [0, 1];
 
 /**
  * Stretch the opening view to reach a figure that landed outside it.
@@ -1301,7 +1487,7 @@ const waveDomain = () => state.wave.view ?? state.wave.auto ?? [0, 1];
  * is worse than one that never annotated -- the run's own framing grows to fit
  * it. A view the reader set is theirs and is left alone.
  */
-function widenAutoFor(times) {
+function widenAutoFor(times: number[]): void {
   if (state.wave.view !== null || !state.wave.auto) return;
   let [lo, hi] = state.wave.auto;
   for (const t of times) {
@@ -1313,15 +1499,15 @@ function widenAutoFor(times) {
 }
 
 /** Hold a view inside the stored window, and refuse to zoom past the samples. */
-function clampDomain([t0, t1]) {
+function clampDomain([t0, t1]: Domain): Domain {
   const [lo, hi] = state.wave.full ?? [t0, t1];
-  let span = Math.min(Math.max(t1 - t0, MIN_SPAN_MS), hi - lo);
-  let start = Math.min(Math.max(t0, lo), hi - span);
+  const span = Math.min(Math.max(t1 - t0, MIN_SPAN_MS), hi - lo);
+  const start = Math.min(Math.max(t0, lo), hi - span);
   return [start, start + span];
 }
 
 /** Adopt a view, or `null` to fall back to the run's own framing. */
-function setWaveView(domain) {
+function setWaveView(domain: Domain | null): void {
   const next = domain === null ? null : clampDomain(domain);
   // Snapping back to exactly the auto window counts as not having zoomed, so
   // the reset control goes away rather than lingering with nothing to undo.
@@ -1340,13 +1526,28 @@ function setWaveView(domain) {
  * per column makes the drawn shape an honest bound on what is underneath it.
  */
 
+/** Per pixel column: the lowest and highest value under it, and whether any was. */
+interface ColumnBand {
+  lo: Float32Array;
+  hi: Float32Array;
+  seen: Uint8Array;
+}
+
 /**
  * Reduce a source of `count` elements spanning `[s0, s1]` ms to `cols` columns
  * over `domain`. `lo(i)` and `hi(i)` read one element. Columns with no element
  * under them are left unset, which is how a 99 ms record stops rather than
  * being stretched across a 124 ms axis.
  */
-function decimate(count, s0, s1, lo, hi, domain, cols) {
+function decimate(
+  count: number,
+  s0: number,
+  s1: number,
+  lo: (i: number) => number,
+  hi: (i: number) => number,
+  domain: Domain,
+  cols: number,
+): ColumnBand {
   const outLo = new Float32Array(cols);
   const outHi = new Float32Array(cols);
   const seen = new Uint8Array(cols);
@@ -1378,7 +1579,7 @@ function decimate(count, s0, s1, lo, hi, domain, cols) {
   return { lo: outLo, hi: outHi, seen };
 }
 
-function envelopeColumns(record, domain, cols) {
+function envelopeColumns(record: Envelope, domain: Domain, cols: number): ColumnBand {
   const { values, buckets, entry } = record;
   const [s0, s1] = recordSpan(entry);
   return decimate(
@@ -1386,13 +1587,18 @@ function envelopeColumns(record, domain, cols) {
   );
 }
 
-function sampleColumns(values, entry, domain, cols) {
+function sampleColumns(
+  values: ArrayLike<number>,
+  entry: WaveformEntry,
+  domain: Domain,
+  cols: number,
+): ColumnBand {
   const [s0, s1] = recordSpan(entry);
   return decimate(values.length, s0, s1, (i) => values[i], (i) => values[i], domain, cols);
 }
 
 /** The across-shot min/max for one mic: the spread, as one shape. */
-function micBand(group, domain, cols) {
+function micBand(group: Envelope[], domain: Domain, cols: number): ColumnBand {
   const lo = new Float32Array(cols).fill(Infinity);
   const hi = new Float32Array(cols).fill(-Infinity);
   const seen = new Uint8Array(cols);
@@ -1408,8 +1614,17 @@ function micBand(group, domain, cols) {
   return { lo, hi, seen };
 }
 
+/** Screen x of a pixel column's centre. */
+type ColumnX = (c: number) => number;
+
 /** Fill between `lo` and `hi`, breaking the path wherever the data stops. */
-function fillBand(ctx, band, cols, py, colX) {
+function fillBand(
+  ctx: CanvasRenderingContext2D,
+  band: ColumnBand,
+  cols: number,
+  py: Scale,
+  colX: ColumnX,
+): void {
   for (let c = 0; c < cols; ) {
     if (!band.seen[c]) { c++; continue; }
     let end = c;
@@ -1432,7 +1647,13 @@ function fillBand(ctx, band, cols, py, colX) {
  * shape of the signal at any zoom, and once the reader is in far enough that a
  * column holds one sample the same path is simply the waveform.
  */
-function strokeColumns(ctx, band, cols, py, colX) {
+function strokeColumns(
+  ctx: CanvasRenderingContext2D,
+  band: ColumnBand,
+  cols: number,
+  py: Scale,
+  colX: ColumnX,
+): void {
   ctx.beginPath();
   let open = false;
   for (let c = 0; c < cols; c++) {
@@ -1449,7 +1670,14 @@ function strokeColumns(ctx, band, cols, py, colX) {
 }
 
 /** One edge of a band: a plain line through a single value per column. */
-function strokeSeries(ctx, values, seen, cols, py, colX) {
+function strokeSeries(
+  ctx: CanvasRenderingContext2D,
+  values: Float32Array,
+  seen: Uint8Array,
+  cols: number,
+  py: Scale,
+  colX: ColumnX,
+): void {
   ctx.beginPath();
   let open = false;
   for (let c = 0; c < cols; c++) {
@@ -1462,9 +1690,20 @@ function strokeSeries(ctx, values, seen, cols, py, colX) {
   ctx.stroke();
 }
 
+/** A run's records grouped by mic, in the order they first appear. */
+function groupByMic(records: Envelope[]): Map<string | null, Envelope[]> {
+  const byMic = new Map<string | null, Envelope[]>();
+  for (const record of records) {
+    let group = byMic.get(record.entry.mic);
+    if (!group) byMic.set(record.entry.mic, (group = []));
+    group.push(record);
+  }
+  return byMic;
+}
+
 /* -------------------------------------------------------------- wave render */
 
-async function selectRun(index, { updateHash = true } = {}) {
+async function selectRun(index: number, { updateHash = true } = {}): Promise<void> {
   state.selectedRun = index;
   state.selectedWaveform = null;
   state.wave.record = null;
@@ -1477,19 +1716,19 @@ async function selectRun(index, { updateHash = true } = {}) {
   $('wave-reset').hidden = true;
   // Deep link, so a particular run is shareable and reloadable.
   if (updateHash) {
-    const id = state.bundle.catalog.ids[index];
+    const id = bundle().catalog.ids[index];
     history.replaceState(null, '', `#run=${id}`);
   }
   renderScatter();
   renderTable();
 
-  const { catalog } = state.bundle;
+  const { catalog } = bundle();
   const runId = catalog.ids[index];
   $('wave-title').textContent = runLabel(index);
   $('derived').hidden = true;
   $('shots').innerHTML = '';
 
-  renderSpectrum(runId).catch((error) => console.error(error));
+  renderSpectrum(runId).catch((error: unknown) => console.error(error));
 
   if (!catalog.columns.waveform_count[index]) {
     state.envelopes = null;
@@ -1497,7 +1736,7 @@ async function selectRun(index, { updateHash = true } = {}) {
     $('wave-hint').textContent =
       'No waveforms for this run — a handful of runs across the release sets ' +
       'have no capture in the archive, either never recorded or set aside.';
-    drawPlaceholder($('wave'), 'No waveforms released for this run');
+    drawPlaceholder($('wave', HTMLCanvasElement), 'No waveforms released for this run');
     clearLegend($('wave-legend'));
     return;
   }
@@ -1505,9 +1744,9 @@ async function selectRun(index, { updateHash = true } = {}) {
   $('wave-hint').textContent = 'Loading traces…';
   try {
     // One coalesced Range request for the whole run.
-    state.envelopes = await fetchRunEnvelopes(state.bundle, runId);
+    state.envelopes = await fetchRunEnvelopes(bundle(), runId);
   } catch (error) {
-    $('wave-hint').textContent = `Could not load waveforms: ${error.message}`;
+    $('wave-hint').textContent = `Could not load waveforms: ${messageOf(error)}`;
     return;
   }
   state.wave.full = fullSpan(state.envelopes);
@@ -1518,9 +1757,9 @@ async function selectRun(index, { updateHash = true } = {}) {
 }
 
 /** The line under the title: what is on screen, and how to move it. */
-function describeWave() {
+function describeWave(): void {
   const records = state.envelopes;
-  if (!records) return;
+  if (!records || !state.wave.full) return;
   const selected = state.wave.record;
   const [t0, t1] = waveDomain();
   const [f0, f1] = state.wave.full;
@@ -1546,8 +1785,8 @@ function describeWave() {
     `zoom, drag to pan, pick a shot below for its full-rate trace.`;
 }
 
-function renderWave() {
-  const canvas = $('wave');
+function renderWave(): void {
+  const canvas = $('wave', HTMLCanvasElement);
   const { ctx, width, height } = prepare(canvas);
   const records = state.envelopes;
   if (!records || !records.length) return;
@@ -1555,16 +1794,12 @@ function renderWave() {
   const domain = waveDomain();
   const box = { left: 54, top: 20, right: width - 42, bottom: height - 34 };
   const cols = Math.max(1, Math.round(box.right - box.left));
-  const colX = (c) => box.left + ((c + 0.5) / cols) * (box.right - box.left);
+  const colX = (c: number) => box.left + ((c + 0.5) / cols) * (box.right - box.left);
   state.wave.box = box;
 
-  const byMic = new Map();
-  for (const record of records) {
-    if (!byMic.has(record.entry.mic)) byMic.set(record.entry.mic, []);
-    byMic.get(record.entry.mic).push(record);
-  }
+  const byMic = groupByMic(records);
 
-  const bands = new Map();
+  const bands = new Map<string | null, ColumnBand>();
   for (const [mic, group] of byMic) bands.set(mic, micBand(group, domain, cols));
 
   const selected = state.wave.record;
@@ -1577,7 +1812,7 @@ function renderWave() {
   // so anything but the peak stays pressed flat against the axis.
   let lo = Infinity;
   let hi = -Infinity;
-  const consider = (band) => {
+  const consider = (band: ColumnBand) => {
     for (let c = 0; c < cols; c++) {
       if (!band.seen[c]) continue;
       if (band.lo[c] < lo) lo = band.lo[c];
@@ -1600,7 +1835,7 @@ function renderWave() {
   ctx.clip();
 
   for (const [mic, band] of bands) {
-    const colour = css(MIC_COLOR[mic] ?? '--series-1');
+    const colour = css(micColor(mic));
     // A selected shot owns the foreground; its neighbours drop back to context.
     // Fifteen traces at equal weight is what made this a block of colour.
     ctx.globalAlpha = selected ? 0.11 : 0.32;
@@ -1618,8 +1853,8 @@ function renderWave() {
   }
   ctx.globalAlpha = 1;
 
-  if (trace) {
-    ctx.strokeStyle = css(MIC_COLOR[selected.entry.mic] ?? '--series-1');
+  if (trace && selected) {
+    ctx.strokeStyle = css(micColor(selected.entry.mic));
     ctx.lineWidth = 1.4;
     strokeColumns(ctx, trace, cols, py, colX);
   }
@@ -1633,7 +1868,7 @@ function renderWave() {
   ctx.font = '11px system-ui, sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  const taken = [];
+  const taken: number[] = [];
   for (const [mic, band] of bands) {
     let best = -Infinity;
     for (let c = 0; c < cols; c++) if (band.seen[c] && band.hi[c] > best) best = band.hi[c];
@@ -1642,7 +1877,7 @@ function renderWave() {
     let y = Math.min(Math.max(py(best), box.top + 6), box.bottom - 6);
     while (taken.some((other) => Math.abs(other - y) < 13)) y += 13;
     taken.push(y);
-    ctx.fillText(mic, box.right + 6, y);
+    ctx.fillText(String(mic), box.right + 6, y);
   }
 
   const legend = clearLegend($('wave-legend'));
@@ -1652,9 +1887,9 @@ function renderWave() {
     item.className = 'item';
     const swatch = document.createElement('span');
     swatch.className = 'swatch';
-    swatch.style.background = `var(${MIC_COLOR[mic] ?? '--series-1'})`;
+    swatch.style.background = `var(${micColor(mic)})`;
     if (selected && selected.entry.mic !== mic) item.classList.add('dim');
-    item.append(swatch, document.createTextNode(mic));
+    item.append(swatch, document.createTextNode(String(mic)));
     // The reset control lives in the legend and stays at its end, so swatches
     // go in ahead of it rather than being appended after.
     legend.insertBefore(item, reset);
@@ -1662,14 +1897,14 @@ function renderWave() {
 }
 
 /** Empty a legend of its swatches without evicting the controls parked in it. */
-function clearLegend(legend) {
+function clearLegend(legend: HTMLElement): HTMLElement {
   for (const item of [...legend.querySelectorAll('.item')]) item.remove();
   return legend;
 }
 
-function drawWaveCrosshair(ctx, box, px) {
+function drawWaveCrosshair(ctx: CanvasRenderingContext2D, box: Box, px: Scale): void {
   const t = state.wave.hover ?? state.wave.pinned;
-  if (t === null || t === undefined) return;
+  if (t === null) return;
   const x = Math.round(px(t)) + 0.5;
   if (x < box.left || x > box.right) return;
   ctx.save();
@@ -1687,14 +1922,14 @@ function drawWaveCrosshair(ctx, box, px) {
 /* ------------------------------------------------------------- wave readout */
 
 /** Sample index of `t` ms within a record, or null if `t` is outside it. */
-function indexAt(entry, t) {
+function indexAt(entry: WaveformEntry, t: number): number | null {
   const [s0, s1] = recordSpan(entry);
   if (t < s0 || t > s1) return null;
   const i = Math.round((t - s0) / (entry.dt * 1000));
   return i >= 0 && i < entry.n ? i : null;
 }
 
-function showWaveTip(t, pinned) {
+function showWaveTip(t: number, pinned: boolean): void {
   const tip = $('wave-tip');
   const box = state.wave.box;
   if (!box || !state.envelopes) return;
@@ -1750,11 +1985,7 @@ function showWaveTip(t, pinned) {
 
   // Band readouts: the extremes across that mic's shots at this instant, which
   // is the thing the band is drawing.
-  const byMic = new Map();
-  for (const record of state.envelopes) {
-    if (!byMic.has(record.entry.mic)) byMic.set(record.entry.mic, []);
-    byMic.get(record.entry.mic).push(record);
-  }
+  const byMic = groupByMic(state.envelopes);
   for (const [mic, group] of byMic) {
     let lo = Infinity;
     let hi = -Infinity;
@@ -1775,14 +2006,14 @@ function showWaveTip(t, pinned) {
   }
 
   tip.hidden = false;
-  const wrap = $('wave').parentElement.getBoundingClientRect();
+  const wrap = wrapRect($('wave', HTMLCanvasElement));
   const x = state.wave.lastX ?? box.left;
   const y = state.wave.lastY ?? box.top;
   tip.style.left = `${Math.max(4, Math.min(x + 14, wrap.width - tip.offsetWidth - 6))}px`;
   tip.style.top = `${Math.max(4, Math.min(y - 10, wrap.height - tip.offsetHeight - 4))}px`;
 }
 
-function dismissWaveTip() {
+function dismissWaveTip(): void {
   state.wave.pinned = null;
   const tip = $('wave-tip');
   tip.hidden = true;
@@ -1792,7 +2023,7 @@ function dismissWaveTip() {
 /* --------------------------------------------------------- wave interaction */
 
 /** Time in ms under a pointer, or null if it is outside the plot. */
-function waveTimeAt(event) {
+function waveTimeAt(event: MouseEvent): number | null {
   const box = state.wave.box;
   if (!box) return null;
   const rect = $('wave').getBoundingClientRect();
@@ -1805,22 +2036,22 @@ function waveTimeAt(event) {
 }
 
 /** Zoom by `factor` about `anchor` ms, so whatever is under the cursor stays put. */
-function zoomWave(factor, anchor) {
+function zoomWave(factor: number, anchor: number | null): void {
   const [t0, t1] = waveDomain();
   const at = anchor ?? (t0 + t1) / 2;
   setWaveView([at - (at - t0) * factor, at + (t1 - at) * factor]);
 }
 
-function bindWave() {
-  const canvas = $('wave');
+function bindWave(): void {
+  const canvas = $('wave', HTMLCanvasElement);
   const tip = $('wave-tip');
-  const pointers = new Map();
-  let dragFrom = null; // {x, domain} while panning
+  const pointers = new Map<number, PointerEvent>();
+  let dragFrom: { x: number; domain: Domain } | null = null; // while panning
   let dragged = false;
-  let pinchFrom = null; // {distance, domain} while pinching
+  let pinchFrom: { distance: number; domain: Domain } | null = null; // while pinching
 
   tip.addEventListener('click', (event) => {
-    if (!event.target.closest('.tip-close')) return;
+    if (!onClose(event)) return;
     dismissWaveTip();
     renderWave();
   });
@@ -1863,6 +2094,7 @@ function bindWave() {
 
     if (dragFrom) {
       const box = state.wave.box;
+      if (!box) return;
       const [t0, t1] = dragFrom.domain;
       const shift = ((dragFrom.x - event.clientX) / (box.right - box.left)) * (t1 - t0);
       if (Math.abs(dragFrom.x - event.clientX) > 3) dragged = true;
@@ -1884,7 +2116,7 @@ function bindWave() {
     renderWave();
   });
 
-  const release = (event) => {
+  const release = (event: PointerEvent) => {
     pointers.delete(event.pointerId);
     if (pointers.size < 2) pinchFrom = null;
     if (pointers.size === 0) {
@@ -1936,7 +2168,7 @@ function bindWave() {
     if (!state.envelopes || !state.wave.full) return;
     const [t0, t1] = waveDomain();
     const step = (t1 - t0) * 0.2;
-    const moves = {
+    const moves: Record<string, (() => void) | undefined> = {
       ArrowLeft: () => setWaveView([t0 - step, t1 - step]),
       ArrowRight: () => setWaveView([t0 + step, t1 + step]),
       '+': () => zoomWave(1 / 1.4, null),
@@ -1954,7 +2186,7 @@ function bindWave() {
 
 /* ---------------------------------------------------------------- shot picks */
 
-function renderShotButtons() {
+function renderShotButtons(): void {
   const host = $('shots');
   host.innerHTML = '';
 
@@ -1967,8 +2199,8 @@ function renderShotButtons() {
   all.addEventListener('click', () => clearFullRate());
   host.append(all);
 
-  const seen = new Map();
-  for (const record of state.envelopes) {
+  const seen = new Map<string, WaveformEntry>();
+  for (const record of state.envelopes ?? []) {
     seen.set(`${record.entry.mic}/${record.entry.shot}`, record.entry);
   }
   for (const [key, entry] of seen) {
@@ -1976,31 +2208,33 @@ function renderShotButtons() {
     button.type = 'button';
     button.textContent = key + (entry.excluded ? ' (spare)' : '');
     button.setAttribute('aria-pressed', String(state.selectedWaveform === entry.id));
-    button.addEventListener('click', () => loadFullRate(entry));
+    button.addEventListener('click', () => void loadFullRate(entry));
     host.append(button);
   }
 }
 
 /** Back to the band view, keeping whatever zoom the reader had set. */
-function clearFullRate() {
+function clearFullRate(): void {
   state.selectedWaveform = null;
   state.wave.record = null;
   $('derived').hidden = true;
-  const run = state.bundle.catalog.ids[state.selectedRun];
-  history.replaceState(null, '', `#run=${run}`);
+  if (state.selectedRun !== null) {
+    const run = bundle().catalog.ids[state.selectedRun];
+    history.replaceState(null, '', `#run=${run}`);
+  }
   renderShotButtons();
   describeWave();
   renderWave();
 }
 
-async function loadFullRate(entry, { updateHash = true } = {}) {
+async function loadFullRate(entry: WaveformEntry, { updateHash = true } = {}): Promise<void> {
   state.selectedWaveform = entry.id;
   renderShotButtons();
-  if (updateHash) {
-    const run = state.bundle.catalog.ids[state.selectedRun];
+  if (updateHash && state.selectedRun !== null) {
+    const run = bundle().catalog.ids[state.selectedRun];
     history.replaceState(null, '', `#run=${run}&shot=${entry.id}`);
   }
-  const { values, dt } = await fetchSamples(state.bundle, entry.id);
+  const { values, dt } = await fetchSamples(bundle(), entry.id);
   // Raced ahead: the reader picked something else while this was in flight.
   if (state.selectedWaveform !== entry.id) return;
 
@@ -2010,7 +2244,7 @@ async function loadFullRate(entry, { updateHash = true } = {}) {
   state.wave.record = { entry, values, dt, analysis };
 
   const [s0] = recordSpan(entry);
-  const at = (i) => s0 + i * dt * 1000;
+  const at = (i: number) => s0 + i * dt * 1000;
   widenAutoFor([at(analysis.trough), at(analysis.impulseIndex), at(analysis.leqIndex)]);
 
   $('derived').hidden = false;
@@ -2021,16 +2255,34 @@ async function loadFullRate(entry, { updateHash = true } = {}) {
 
 /* -------------------------------------------------------------- derived plots */
 
+/** A figure marked on a derived curve: where it was taken, and what it says. */
+interface Mark {
+  t: number;
+  v: number;
+  text: string;
+}
+
 /**
  * One curve on the shared time axis, with the region and the instant that a
  * published figure was taken from marked on it.
  */
-function drawCurve(canvas, { values, entry, label, colorVar, digits = 0, shade, marks = [] }) {
+function drawCurve(
+  canvas: HTMLCanvasElement,
+  { values, entry, label, colorVar, digits = 0, shade, marks = [] }: {
+    values: ArrayLike<number>;
+    entry: WaveformEntry;
+    label: string;
+    colorVar: string;
+    digits?: number;
+    shade: { from: number; to: number } | null;
+    marks?: Mark[];
+  },
+): void {
   const { ctx, width, height } = prepare(canvas);
   const domain = waveDomain();
   const box = { left: 54, top: 18, right: width - 42, bottom: height - 30 };
   const cols = Math.max(1, Math.round(box.right - box.left));
-  const colX = (c) => box.left + ((c + 0.5) / cols) * (box.right - box.left);
+  const colX = (c: number) => box.left + ((c + 0.5) / cols) * (box.right - box.left);
   const band = sampleColumns(values, entry, domain, cols);
 
   let lo = Infinity;
@@ -2112,15 +2364,15 @@ function drawCurve(canvas, { values, entry, label, colorVar, digits = 0, shade, 
   }
 }
 
-function renderDerived() {
+function renderDerived(): void {
   const selected = state.wave.record;
   if (!selected || $('derived').hidden) return;
-  const { entry, values, dt, analysis } = selected;
+  const { entry, dt, analysis } = selected;
   const [s0] = recordSpan(entry);
   const stepMs = dt * 1000;
-  const at = (i) => s0 + i * stepMs;
+  const at = (i: number) => s0 + i * stepMs;
 
-  drawCurve($('impulse'), {
+  drawCurve($('impulse', HTMLCanvasElement), {
     values: analysis.integral,
     entry,
     label: 'cumulative impulse, Pa·ms',
@@ -2154,7 +2406,7 @@ function renderDerived() {
   for (let i = 0; i < levels.length; i++) {
     levels[i] = analysis.running[i] > 0 ? toDb(analysis.running[i], P0) : NaN;
   }
-  drawCurve($('leq'), {
+  drawCurve($('leq', HTMLCanvasElement), {
     values: levels,
     entry,
     label: 'Leq(10ms), dBA',
@@ -2175,12 +2427,14 @@ function renderDerived() {
 
 /* --------------------------------------------------------------------- boot */
 
+type Theme = 'light' | 'dark';
+
 /**
  * Stamp a theme and redraw. Canvas colours are read at paint time, so every
  * plot has to be re-rendered rather than restyled.
  */
 /** Repaint every canvas; they read colours and sizes at paint time. */
-function redraw() {
+function redraw(): void {
   renderScatter();
   if (state.envelopes) {
     // Column count follows the canvas width, so a resize really does have to
@@ -2189,11 +2443,11 @@ function redraw() {
     renderDerived();
     describeWave();
   } else {
-    drawPlaceholder($('wave'), 'Pick a run from the chart or table');
+    drawPlaceholder($('wave', HTMLCanvasElement), 'Pick a run from the chart or table');
   }
 }
 
-function applyTheme(theme) {
+function applyTheme(theme: Theme | null): void {
   if (theme) {
     document.documentElement.dataset.theme = theme;
     try {
@@ -2206,7 +2460,7 @@ function applyTheme(theme) {
 }
 
 /** `?theme=light|dark` wins over the stored choice, which wins over the OS. */
-function initialTheme() {
+function initialTheme(): Theme | null {
   const requested = new URLSearchParams(location.search).get('theme');
   if (requested === 'light' || requested === 'dark') return requested;
   try {
@@ -2218,18 +2472,19 @@ function initialTheme() {
   return null;
 }
 
-function fillAxisMenus() {
-  const { catalog } = state.bundle;
+function fillAxisMenus(): void {
+  const { catalog } = bundle();
   const available = MEASURES.filter(([key]) => {
     const column = catalog.columns[key];
     return column && [...column].some((v) => !Number.isNaN(v));
   });
-  for (const [id, initial] of [
+  const menus: [id: string, initial: string][] = [
     ['axis-x', 'weight_oz'],
     ['axis-y', 'se_peak_dba'],
     ['axis-z', ''],
-  ]) {
-    const select = $(id);
+  ];
+  for (const [id, initial] of menus) {
+    const select = $(id, HTMLSelectElement);
     select.textContent = '';
     if (id === 'axis-z') {
       const none = document.createElement('option');
@@ -2237,8 +2492,8 @@ function fillAxisMenus() {
       none.textContent = '(none — keep it 2D)';
       select.append(none);
     }
-    let group = null;
-    let target = select;
+    let group: string | null = null;
+    let target: HTMLSelectElement | HTMLOptGroupElement = select;
     for (const [key, label, , name] of available) {
       if (name !== group) {
         group = name;
@@ -2279,9 +2534,9 @@ function fillAxisMenus() {
  * pixels is still treated as a selection rather than a rotation nobody asked
  * for.
  */
-function bindRotation() {
-  const canvas = $('scatter');
-  let dragging = null;
+function bindRotation(): void {
+  const canvas = $('scatter', HTMLCanvasElement);
+  let dragging: { x: number; y: number; moved: number; view: View } | null = null;
 
   canvas.addEventListener('pointerdown', (event) => {
     bindRotation.wasDrag = false;
@@ -2304,7 +2559,7 @@ function bindRotation() {
     renderScatter();
   });
 
-  const release = (event) => {
+  const release = (event: PointerEvent) => {
     if (!dragging) return;
     // This listener runs before the selection handlers, so clearing `dragging`
     // here would let the pointerup that ended a rotation also select a run.
@@ -2325,21 +2580,26 @@ function bindRotation() {
 
   /** True during a rotation, or for the gesture that just ended in one. */
   bindRotation.isDragging = () =>
-    (Boolean(dragging) && dragging.moved >= 4) || bindRotation.wasDrag === true;
+    (dragging !== null && dragging.moved >= 4) || bindRotation.wasDrag;
 }
+/** Whether the last gesture on the scatter was a rotation; see `bindRotation`. */
+bindRotation.wasDrag = false;
+/** Replaced once `bindRotation` has run; until then nothing can be dragging. */
+bindRotation.isDragging = (): boolean => false;
 
-function countsFor(column) {
-  const { catalog } = state.bundle;
-  const dictionary = catalog.dictionaries[column];
-  const counts = new Map();
+function countsFor(column: string): Map<string, number> {
+  const { catalog } = bundle();
+  const dictionary = dictionaryOf(column);
+  const codes = columnOf(column);
+  const counts = new Map<string, number>();
   for (let i = 0; i < catalog.n; i++) {
-    const name = dictionary[catalog.columns[column][i]];
+    const name: string | undefined = dictionary[codes[i]];
     if (name !== undefined) counts.set(name, (counts.get(name) ?? 0) + 1);
   }
   return counts;
 }
 
-async function main() {
+async function main(): Promise<void> {
   const theme = initialTheme();
   if (theme) document.documentElement.dataset.theme = theme;
 
@@ -2353,22 +2613,23 @@ async function main() {
   // hosts are long lists somebody looks a specific name up in, so those go
   // A-Z -- and hosts sort by the name actually displayed, since sorting by the
   // raw code would leave the rendered list looking unsorted.
-  for (const [id, column, order] of [
+  const facets: [id: string, column: string, order: 'count' | 'name'][] = [
     ['facet-caliber', 'caliber', 'count'],
     ['facet-cartridge', 'cartridge', 'name'],
     ['facet-manufacturer', 'manufacturer', 'name'],
     ['facet-host_cycling', 'host_cycling', 'count'],
     ['facet-host_ammo', 'host_ammo', 'count'],
-  ]) {
+  ];
+  for (const [id, column, order] of facets) {
     const counts = countsFor(column);
     const describe = column === 'cartridge' ? hostLabel : String;
-    const collate = (a, b) =>
+    const collate = (a: string, b: string) =>
       describe(a).localeCompare(describe(b), undefined, {
         sensitivity: 'base',
         numeric: true,
       });
     const values = [...counts.keys()].sort((a, b) =>
-      order === 'name' ? collate(a, b) : counts.get(b) - counts.get(a) || collate(a, b),
+      order === 'name' ? collate(a, b) : (counts.get(b) ?? 0) - (counts.get(a) ?? 0) || collate(a, b),
     );
     buildFacet(id, values, counts, column === 'cartridge' ? hostLabel : null);
   }
@@ -2379,6 +2640,7 @@ async function main() {
   bindWave();
 
   $('frontier-first').addEventListener('change', (event) => {
+    if (!(event.target instanceof HTMLInputElement)) return;
     state.frontierFirst = event.target.checked;
     renderTable();
   });
@@ -2388,9 +2650,9 @@ async function main() {
     $(id).addEventListener('change', refilter);
   }
   $('reset').addEventListener('click', () => {
-    for (const box of document.querySelectorAll('.facet input:checked')) box.checked = false;
-    for (const id of ['q', 'min-weight', 'max-weight', 'min-length', 'max-length']) $(id).value = '';
-    $('baselines').value = 'hide';
+    for (const box of document.querySelectorAll<HTMLInputElement>('.facet input:checked')) box.checked = false;
+    for (const id of ['q', 'min-weight', 'max-weight', 'min-length', 'max-length']) $(id, HTMLInputElement).value = '';
+    $('baselines', HTMLSelectElement).value = 'hide';
     refilter();
   });
 
@@ -2443,7 +2705,8 @@ async function main() {
     $('filters').hidden = small && !state.filtersOpen;
     $('filter-toggle').setAttribute('aria-expanded', String(!small || state.filtersOpen));
     for (const [, facetId] of FACETS) {
-      $(facetId).closest('details').open = !small;
+      const details = $(facetId).closest('details');
+      if (details) details.open = !small;
     }
   };
   $('filter-toggle').addEventListener('click', () => {
@@ -2457,61 +2720,63 @@ async function main() {
   });
   applyLayout();
 
-  let resizeTimer = null;
+  let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(redraw, 120);
   });
 
-  drawPlaceholder($('wave'), 'Pick a run from the chart or table');
+  drawPlaceholder($('wave', HTMLCanvasElement), 'Pick a run from the chart or table');
   refilter();
 
   await applyDeepLink();
   // A pasted #run= link on an already-open page is a navigation too.
   window.addEventListener('hashchange', () => {
-    applyDeepLink().catch((error) => console.error(error));
+    applyDeepLink().catch((error: unknown) => console.error(error));
   });
 }
 
 /** Select whatever `#run=…&shot=…` names, if anything. */
-async function applyDeepLink() {
+async function applyDeepLink(): Promise<void> {
   const params = new URLSearchParams(location.hash.slice(1));
   const requested = params.get('run');
   if (requested === null) return;
 
-  const index = state.bundle.catalog.ids.indexOf(Number(requested));
+  const index = bundle().catalog.ids.indexOf(Number(requested));
   if (index < 0) return;
   if (index === state.selectedRun && !params.get('shot')) return;
 
   // A deep-linked run may sit outside the current slice, so widen enough to
   // show it rather than selecting something invisible.
-  if (!state.mask[index]) {
-    $('baselines').value = 'show';
+  if (!state.mask?.[index]) {
+    $('baselines', HTMLSelectElement).value = 'show';
     refilter();
   }
   await selectRun(index, { updateHash: false });
 
   const shot = params.get('shot');
   if (shot !== null) {
-    const entry = state.bundle.byId.get(Number(shot));
+    const entry = bundle().byId.get(Number(shot));
     if (entry) await loadFullRate(entry, { updateHash: false });
   }
 }
 
-main().catch((error) => {
+main().catch((error: unknown) => {
   const main = document.querySelector('main');
-  main.textContent = '';
-  const card = document.createElement('div');
-  card.className = 'card';
-  const title = document.createElement('h2');
-  title.textContent = 'Could not load the bundle';
-  const detail = document.createElement('p');
-  detail.className = 'hint';
-  detail.textContent = error.message;
-  const fix = document.createElement('p');
-  fix.className = 'hint';
-  fix.textContent = 'Run `python -m tbacss publish tbacss.db web/data` first.';
-  card.append(title, detail, fix);
-  main.append(card);
+  if (main) {
+    main.textContent = '';
+    const card = document.createElement('div');
+    card.className = 'card';
+    const title = document.createElement('h2');
+    title.textContent = 'Could not load the bundle';
+    const detail = document.createElement('p');
+    detail.className = 'hint';
+    detail.textContent = messageOf(error);
+    const fix = document.createElement('p');
+    fix.className = 'hint';
+    fix.textContent = 'Run `python -m tbacss publish tbacss.db web/data` first.';
+    card.append(title, detail, fix);
+    main.append(card);
+  }
   console.error(error);
 });

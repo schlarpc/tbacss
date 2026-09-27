@@ -6,7 +6,6 @@ tbacss.db
 tbacss.db-wal
 tbacss.db-shm
 web/data/
-web/fixture/
 
 # TBAC's own material, fetched rather than vendored: the report pages are
 # their copyrighted document rather than the data they grant use of, and
@@ -34,3 +33,7 @@ __pycache__/
 
 # Sphinx build output
 /docs/generated/
+
+# The web viewer's npm install and vite build.
+/node_modules
+/dist

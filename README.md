@@ -30,12 +30,16 @@ position 2023 used in place of `MR`.
 
 ## Install
 
-Only `numpy` is needed to build and read. `scipy` is needed for `verify`,
-`pandas` for `export`.
+With [Nix](https://nixos.org/) and flakes, everything is in the dev shell —
+Python with every dependency, Node for the explorer, and the git hooks:
 
 ```
-pip install numpy scipy pandas
+direnv allow        # or: nix develop
 ```
+
+`nix run . -- <command>` runs the CLI without a checkout's environment.
+Without Nix it is an ordinary package: `pip install '.[export]'` gets `numpy`
+and `scipy`, plus `pandas` and `pyarrow` for `export`.
 
 ## Get the sources
 
@@ -132,7 +136,7 @@ being stuck with whatever was baked in at publish time.
 ### The waveform codec
 
 These records are audio — 262 kHz sampling of a signal whose energy is far
-below Nyquist — so `tbacss/wavecodec.py` uses the cheap tier of FLAC: quantise
+below Nyquist — so `src/tbacss/wavecodec.py` uses the cheap tier of FLAC: quantise
 to integers, take the second difference, Rice-code the residual with a
 parameter chosen per 4096-sample block. Measured over real records, bytes per
 sample:
@@ -167,9 +171,23 @@ a decode per record every time a run is opened.
 
 ### Running the explorer
 
+The explorer is TypeScript under `web/src/`, built with Vite. `package.json`
+lives at the repository root:
+
 ```
 python -m tbacss publish tbacss.db web/data
-python3 scripts/serve.py                     # http://127.0.0.1:8765
+npm run dev                                  # http://localhost:5173, serves web/data too
+```
+
+The dev shell links `node_modules` from the Nix store, so there is no
+`npm install` step. Without Nix, run `npm ci --package-lock-only=false` first;
+`.npmrc` defaults npm to lockfile-only. The dev server serves `web/data/` in
+place and answers `Range` with 206s. To serve a production build instead:
+
+```
+npm run build                                # dist/, without the data
+ln -s ../web/data dist/data
+python3 scripts/serve.py                     # serves dist/ on http://127.0.0.1:8765
 ```
 
 Use `scripts/serve.py`, not `python -m http.server`: the stock one ignores
@@ -181,23 +199,26 @@ Caddy) handles ranges correctly.
 
 The bundle is ~640 MB and is built from archives no CI runner has room for, so
 it is shipped as a GitHub release rather than committed — not in LFS either,
-whose quota is charged on every clone and every deploy. `web/DATA_RELEASE`
-names the release the site is built against:
+whose quota is charged on every clone and every deploy.
+`web/data-release.json` pins the release the site is built against, with an
+SRI hash for every file:
 
 ```
 python -m tbacss publish tbacss.db web/data
 scripts/release_data.sh        # uploads web/data as release data-<version>
-git add web/DATA_RELEASE && git commit -m "Publish data-<version>" && git push
+git add web/data-release.json && git commit -m "Publish data-<version>" && git push
 ```
 
-`.github/workflows/pages.yml` then copies the four static files, downloads that
-release into `data/`, and deploys. Set the repository's Pages source to
-_GitHub Actions_ once. The site fits the 1 GB Pages limit, and Pages answers
-`Range` requests, which the waveform loader depends on.
+`nix build .#site` is the viewer plus those files, fetched and hash-checked,
+and `.github/workflows/pages.yml` builds exactly that and deploys it. Set the
+repository's Pages source to _GitHub Actions_ once. The site fits the 1 GB
+Pages limit, and Pages answers `Range` requests, which the waveform loader
+depends on. `nix build .#web` is the viewer alone.
 
 The release tag is the bundle's content hash, so re-running the script on an
 unchanged bundle is a no-op, and a code-only push redeploys against the same
-data.
+data. A release asset replaced in place fails the build rather than silently
+changing the site.
 
 The page filters on facets and numeric ranges, plots any measure against any
 other with the Pareto frontier highlighted, and draws a run's waveforms —
@@ -248,7 +269,7 @@ with them — calibers by volume, makers and hosts A-Z, since those are lists yo
 look a specific name up in. Hosts sort by the name shown rather than the raw
 code, or the rendered list would look unsorted.
 
-`web/tbacss.js` is the dependency-free reader underneath it: `loadBundle`,
+`web/src/tbacss.ts` is the dependency-free reader underneath it: `loadBundle`,
 `selection`, `paretoFront`, `fetchRunEnvelopes`, `fetchSamples`, `decodeFrame`,
 and the derived `impulse` / `leq` / `metrics`. `analyse` is the same analysis
 returning its working — the curves plus the indices the report's method picks
@@ -257,13 +278,15 @@ out of them — which is what lets the plots mark where a figure came from;
 matches Python:
 
 ```
-node web/test.mjs                                       # filtering and Pareto
-python3 scripts/make_js_fixture.py tbacss.db web/fixture
-node web/check.mjs web/fixture                          # DSP against Python
+npm run check                                           # tsc, strict
+npm test                                                # filtering, Pareto, and DSP against Python
+python3 scripts/make_js_fixture.py tbacss.db tests/fixture   # regenerate the fixture
 ```
 
-`check.mjs` closes the loop: Python encodes a frame, JS decodes it, JS
-recomputes peak / dBA / impulse / Leq, and the results are compared against
+`tests/web/dsp.test.ts` runs against the tracked fixture in `tests/fixture/`
+(`TBACSS_FIXTURE=<dir>` points it elsewhere). It closes the loop: Python
+encodes a frame, JS decodes it, JS recomputes peak / dBA / impulse / Leq, and
+the results are compared against
 what `tbacss.analysis` gets from the same samples. They agree to 0.00001 dB,
 which is what makes it safe to derive figures in the browser rather than
 shipping precomputed curves.
@@ -293,7 +316,7 @@ footer tags are kept verbatim in `waveform.header_json` / `waveform.tags_json`.
 ## Derived analyses
 
 `all.csv` gives one shot-averaged number per run per mic, printed to two
-decimals. `tbacss/derive.py` adds four things that number cannot express, all
+decimals. `src/tbacss/derive.py` adds four things that number cannot express, all
 computed from `shot_metric` and `band_level` — no waveform is re-read.
 
 **Uncertainty.** Five shots have a spread: the median shot-to-shot standard
@@ -329,7 +352,7 @@ them out.
 ## Verification
 
 `python -m tbacss verify` recomputes every cell of `all.csv` from the stored
-waveforms using `tbacss/analysis.py`, an independent port of the Octave TBAC
+waveforms using `src/tbacss/analysis.py`, an independent port of the Octave TBAC
 links from each report's CODE section (fetched into `reference/`). Agreement is
 within the table's 2-decimal rounding, which is the end-to-end check that the
 archive was parsed correctly.
@@ -340,8 +363,12 @@ data: `a_weighting()`, `leq_fast()`, `shot_metrics()`, `average_metrics()`.
 Unit tests cover the file formats against synthetic fixtures:
 
 ```
-python3 -m pytest
+pytest
 ```
+
+`nix flake check` runs everything CI does: the git hooks (ruff, mypy, pytest,
+dprint, shellcheck, sphinx) and the explorer's build, which type-checks it and
+runs its tests.
 
 ## Notes on the data
 
@@ -379,19 +406,19 @@ python3 -m pytest
   lightest, which is how it went unnoticed. `summit.SPEC_DEFECTS` lists it and
   `read_summary_csv` drops the cell. It is dropped rather than back-filled from
   2023, because a measurement taken a year earlier is not evidence about what
-  was on the bench in 2024. Unlike `tbacss/caveats.py`, nothing in the report
+  was on the bench in 2024. Unlike `src/tbacss/caveats.py`, nothing in the report
   flags this one — it is our finding, not TBAC's.
 - **TBAC published a warning that is not in the data.** The 2024 `.22LR-BA`
   host was a last-minute substitute after a rifle malfunction, and it rings at
   the shooter's-ear mic on roughly half the shots: _"it is probably best to
   ignore the SE numbers for this run of .22's"_. That is 26 runs whose SE
   figures should not be ranked on, and it lives only in the report prose, so
-  anything built on `all.csv` alone would use them. `tbacss/caveats.py` makes
+  anything built on `all.csv` alone would use them. `src/tbacss/caveats.py` makes
   it machine-readable, `publish` flags the affected runs, and the explorer
   marks them. It is the only substantive advisory across all four years —
   found by grepping every report for advisory language, not by luck.
 - Host codes are not in `all.csv` — they are prose in each year's report.
-  `tbacss/hosts.py` is that prose _parsed_, covering all 52 codes, and
+  `src/tbacss/hosts.py` is that prose _parsed_, covering all 52 codes, and
   `publish` both ships it and joins it onto every run as `host_barrel_in`,
   `host_cycling`, `host_platform`, `host_ammo` and `host_grains`. So the two
   biggest confounders in the dataset stop being locked inside a string:

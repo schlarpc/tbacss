@@ -1,7 +1,7 @@
 /**
  * Unit tests for the browser-side catalog helpers.
  *
- *   node web/test.mjs
+ *   npm test
  *
  * These cover the parts a UI leans on hardest -- filtering and Pareto search --
  * with hand-checked cases, including the null handling that decides whether a
@@ -9,26 +9,20 @@
  */
 
 import assert from 'node:assert/strict';
-import { selection, rows, paretoFront } from './tbacss.js';
-
-let passed = 0;
-function test(name, fn) {
-  try {
-    fn();
-    passed++;
-  } catch (error) {
-    console.error(`FAIL ${name}\n  ${error.message}`);
-    process.exitCode = 1;
-  }
-}
+import { test } from 'node:test';
+import { selection, rows, paretoFront } from '../../web/src/tbacss.ts';
+import type { ColumnarTable, Columns } from '../../web/src/tbacss.ts';
 
 /** Minimal stand-in for a loaded catalog. */
-function table(columns, dictionaries = {}) {
+function table(
+  columns: Record<string, (number | null)[]>,
+  dictionaries: Record<string, string[]> = {},
+): ColumnarTable {
   const n = Object.values(columns)[0].length;
-  const typed = {};
+  const typed: Columns = {};
   for (const [name, values] of Object.entries(columns)) {
     typed[name] = dictionaries[name]
-      ? Int32Array.from(values)
+      ? Int32Array.from(values, (v) => v ?? -1)
       : Float64Array.from(values, (v) => (v === null ? NaN : v));
   }
   return { n, columns: typed, dictionaries };
@@ -149,5 +143,3 @@ test('pareto over three objectives stays consistent', () => {
   ]);
   assert.ok(two.every((i) => front.includes(i)));
 });
-
-console.log(`${passed} passed`);

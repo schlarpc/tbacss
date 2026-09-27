@@ -1,9 +1,8 @@
-name: pages
+name: Pages
 
 on:
   push:
     branches: [main]
-    paths: [web/**, .github/workflows/pages.yml]
   workflow_dispatch:
 
 permissions:
@@ -19,15 +18,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Assemble the site
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p _site/data
-          cp web/index.html web/app.js web/style.css web/tbacss.js _site/
-          gh release download "$(cat web/DATA_RELEASE)" --dir _site/data
-          du -sh _site
+      - uses: actions/checkout@v6.0.2
+      - uses: DeterminateSystems/nix-installer-action@v22
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      # The viewer, plus the data bundle fetched from the release that
+      # web/data-release.json pins by hash.
+      - run: nix build .#site --print-build-logs
+      # nix build gives a symlink into a read-only store path, and the data
+      # files are themselves symlinks; Pages needs a real directory tree.
+      - run: cp -rL result _site && chmod -R u+w _site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Write the fixture that `web/check.mjs` validates the browser maths against.
+"""Write the fixture that `tests/web/dsp.test.ts` validates the browser maths against.
 
 Picks a spread of records -- different years, mics and hosts -- encodes each
 analysis window exactly as `tbacss publish` does, and records the metrics
 `tbacss.analysis` computes from the same decoded samples.
 
-    python3 scripts/make_js_fixture.py tbacss.db web/fixture
+    python3 scripts/make_js_fixture.py tbacss.db tests/fixture
 """
 
 from __future__ import annotations

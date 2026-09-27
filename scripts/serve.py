@@ -8,7 +8,7 @@ every waveform click into a full download, so this adds the one feature that
 matters.
 
     python3 scripts/serve.py            # http://127.0.0.1:8765
-    python3 scripts/serve.py --port 9000 --directory web
+    python3 scripts/serve.py --port 9000 --directory dist
 """
 
 from __future__ import annotations
@@ -117,7 +117,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--bind", default="127.0.0.1")
-    parser.add_argument("--directory", default="web")
+    parser.add_argument("--directory", default="dist")
     parser.add_argument(
         "--cache", action="store_true", help="send long cache headers for /data, as a CDN would"
     )

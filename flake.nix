@@ -201,6 +201,72 @@
             );
           };
 
+          # The explorer: TypeScript under web/src, built by Vite. Type checking
+          # and the JS tests (including the DSP comparison against Python's
+          # fixture) run as part of the build, so a broken viewer never builds.
+          nodeModules = pkgs.importNpmLock.buildNodeModules {
+            npmRoot = lib.fileset.toSource {
+              root = ./.;
+              fileset = lib.fileset.unions [
+                ./package.json
+                ./package-lock.json
+              ];
+            };
+            inherit (pkgs) nodejs;
+          };
+          web = pkgs.stdenvNoCC.mkDerivation {
+            pname = "${projectName}-web";
+            version = projectVersion;
+            src = lib.fileset.toSource {
+              root = ./.;
+              fileset = lib.fileset.unions [
+                ./package.json
+                ./package-lock.json
+                ./tsconfig.json
+                ./vite.config.ts
+                ./web/index.html
+                ./web/src
+                ./tests/web
+                ./tests/fixture
+              ];
+            };
+            nativeBuildInputs = [ pkgs.nodejs ];
+            buildPhase = ''
+              runHook preBuild
+              ln -s ${nodeModules}/node_modules node_modules
+              npm run check
+              npm test
+              npm run build
+              runHook postBuild
+            '';
+            installPhase = ''
+              runHook preInstall
+              cp -r dist $out
+              runHook postInstall
+            '';
+          };
+
+          # The deployable site: the viewer plus the data bundle, fetched from
+          # the GitHub release that web/data-release.json pins by hash. The
+          # bundle is built from ~27 GB of archives, so it is published by
+          # scripts/release_data.sh rather than built here.
+          dataRelease = lib.importJSON ./web/data-release.json;
+          site = pkgs.runCommand "${projectName}-site" { } ''
+            cp -r ${web} $out
+            chmod u+w $out
+            mkdir $out/data
+            ${lib.concatStrings (
+              lib.mapAttrsToList (name: hash: ''
+                ln -s ${
+                  pkgs.fetchurl {
+                    url = "${dataRelease.url}/${name}";
+                    inherit hash;
+                  }
+                } $out/data/${name}
+              '') dataRelease.files
+            )}
+          '';
+
           # Build Sphinx documentation as a Nix output.
           venvDoc = pythonSet.mkVirtualEnv "${projectName}-doc-env" workspace.deps.all;
           doc = pkgs.runCommand "${projectName}-doc" { nativeBuildInputs = [ venvDoc ]; } ''
@@ -251,8 +317,11 @@
             // lib.optionalAttrs hasRootProject {
               default = memberApplications.${projectName};
               container = memberContainers.${projectName};
-              inherit doc;
-            };
+              inherit doc web;
+            }
+            // lib.optionalAttrs (builtins.pathExists ./web/data-release.json) { inherit site; };
+
+          checks.web = web;
 
           checks.git-hooks = git-hooks.lib.${system}.run {
             src = ./.;
@@ -270,11 +339,14 @@
                   "json"
                   "yaml"
                 ];
-                # MANIFEST.md and PROVENANCE.md are written by scripts/make_*.py.
+                # Generated files: MANIFEST.md and PROVENANCE.md by scripts/make_*.py,
+                # the fixture by scripts/make_js_fixture.py, the lockfile by npm.
                 excludes = [
                   "^\\.template/"
                   "^MANIFEST\\.md$"
                   "^PROVENANCE\\.md$"
+                  "^package-lock\\.json$"
+                  "^tests/fixture/"
                 ];
               };
               mypy = {
@@ -333,8 +405,12 @@
               venvDevelopment
               pkgs.uv
               pkgs.act
+              pkgs.nodejs
+              pkgs.importNpmLock.hooks.linkNodeModulesHook
             ]
             ++ self.checks.${system}.git-hooks.enabledPackages;
+
+            npmDeps = nodeModules;
 
             env = {
               # Don't create venv using uv
