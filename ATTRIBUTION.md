@@ -33,7 +33,7 @@ The static bundle written by `python -m tbacss publish` carries the year and
 report URL for each dataset in `catalog.json` under `datasets`, so a viewer can
 render the footnote itself rather than relying on whoever deployed it.
 
-## What is *not* covered
+## What is _not_ covered
 
 The report prose, its figures, and the plots on each year's results page are
 "© COPYRIGHT &lt;year&gt; THUNDER BEAST ARMS CORPORATION (TBAC), ALL RIGHTS

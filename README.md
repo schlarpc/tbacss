@@ -8,21 +8,21 @@ per-suppressor physical specs, and every PULSE waveform in the archive.
 
 TBAC publishes two things per year:
 
-* `all.csv` — the summary table from the report. One row per test run, with
+- `all.csv` — the summary table from the report. One row per test run, with
   shot-averaged peak / impulse / Leq figures for each microphone.
-* `<year>_SUMMIT_RELEASE_SET.tar.gz` — the raw B&K PULSE exports. Every
+- `<year>_SUMMIT_RELEASE_SET.tar.gz` — the raw B&K PULSE exports. Every
   capture is 131072 samples at 262144 Hz (0.5 s, 24-bit), exported as ASCII.
 
 The layout is not the same every year, and the parser handles both shapes:
 
-| | 2023 | 2024 – 2026 |
-| --- | --- | --- |
-| archive root | `2023_SUMMIT_RELEASE_SET/` | none |
-| event | `Day1` … `Day3` | `YYYYMMDD` |
-| shot | `Shot N/` subdirectory | filename suffix `- Input.N` |
-| microphones | `ML`, `SE`, `225` | `ML`, `MR`, `SE` |
-| physical specs | `all.csv` only | `Specs.txt` per run |
-| `.22` analysis window | 0.125 s (no special case) | 0.100 s |
+|                       | 2023                       | 2024 – 2026                 |
+| --------------------- | -------------------------- | --------------------------- |
+| archive root          | `2023_SUMMIT_RELEASE_SET/` | none                        |
+| event                 | `Day1` … `Day3`            | `YYYYMMDD`                  |
+| shot                  | `Shot N/` subdirectory     | filename suffix `- Input.N` |
+| microphones           | `ML`, `SE`, `225`          | `ML`, `MR`, `SE`            |
+| physical specs        | `all.csv` only             | `Specs.txt` per run         |
+| `.22` analysis window | 0.125 s (no special case)  | 0.100 s                     |
 
 `ML` and `MR` are the MIL-STD-1474 positions left and right of the muzzle,
 `SE` is the shooter's ear, and `225` is the 225-degree above-shoulder-arc
@@ -105,13 +105,13 @@ python -m tbacss verify tbacss.db
 `python -m tbacss publish tbacss.db web/data` writes a bundle a static site can
 serve with no backend and no query engine:
 
-| file | loaded | contents |
-| --- | --- | --- |
-| `catalog.json` | up front | one row per run, dictionary-encoded columns |
-| `shots.json` | up front | per-shot metrics |
-| `waveforms.json` | up front | byte offsets into the two `.bin` files |
-| `envelopes.bin` | on demand | 2048-bucket min/max per record, raw int16 |
-| `samples.bin` | on demand | full-rate analysis window, `fixed2-rice-v1` frames |
+| file             | loaded    | contents                                           |
+| ---------------- | --------- | -------------------------------------------------- |
+| `catalog.json`   | up front  | one row per run, dictionary-encoded columns        |
+| `shots.json`     | up front  | per-shot metrics                                   |
+| `waveforms.json` | up front  | byte offsets into the two `.bin` files             |
+| `envelopes.bin`  | on demand | 2048-bucket min/max per record, raw int16          |
+| `samples.bin`    | on demand | full-rate analysis window, `fixed2-rice-v1` frames |
 
 The envelope's buckets tile the whole record, which means uneven ones: 32507
 samples do not divide into 2048. A client has nothing to place a bucket in time
@@ -124,7 +124,7 @@ ships whole and lands in typed arrays; filtering and Pareto search are plain
 loops. Everything large is a waveform, which no SQL engine helps with — those
 are fetched one at a time by byte range.
 
-Impulse and Leq curves are *not* published. They are a cumulative trapezoid
+Impulse and Leq curves are _not_ published. They are a cumulative trapezoid
 and a six-coefficient IIR, cheap to derive in the browser, and deriving them
 client-side lets a reader re-window or re-weight interactively instead of
 being stuck with whatever was baked in at publish time.
@@ -137,16 +137,16 @@ to integers, take the second difference, Rice-code the residual with a
 parameter chosen per 4096-sample block. Measured over real records, bytes per
 sample:
 
-| encoding | B/sample |
-| --- | ---: |
-| float32 raw | 4.000 |
-| float32 + zlib | 2.416 |
-| float16 raw / int16 raw | 2.000 |
-| int16 + zlib | 1.356 |
-| int16 + zstd-19 | 1.270 |
-| int16 delta + zstd-19 | 1.130 |
-| **int16 + this codec** | **0.889** |
-| int24 + this codec | 1.887 |
+| encoding                |  B/sample |
+| ----------------------- | --------: |
+| float32 raw             |     4.000 |
+| float32 + zlib          |     2.416 |
+| float16 raw / int16 raw |     2.000 |
+| int16 + zlib            |     1.356 |
+| int16 + zstd-19         |     1.270 |
+| int16 delta + zstd-19   |     1.130 |
+| **int16 + this codec**  | **0.889** |
+| int24 + this codec      |     1.887 |
 
 The win comes from predicting across samples. No per-sample number format can
 capture that: float16, bfloat16 and posit16 all sit at 2.0 B/sample, and a
@@ -155,7 +155,7 @@ referenced to the peak. Order 2 beat orders 0, 1, 3 and 4 on every record, and
 also beat computed LPC at orders 8, 16 and 32 — the signal is oversampled
 enough that a two-tap predictor is already near optimal.
 
-At `--sample-bits 24` the codec reproduces the published metrics *exactly* and
+At `--sample-bits 24` the codec reproduces the published metrics _exactly_ and
 still costs less than raw int16. At the int16 default the worst error is
 0.0013 dB, against tables rounded to 0.01 dB.
 
@@ -192,7 +192,7 @@ git add web/DATA_RELEASE && git commit -m "Publish data-<version>" && git push
 
 `.github/workflows/pages.yml` then copies the four static files, downloads that
 release into `data/`, and deploys. Set the repository's Pages source to
-*GitHub Actions* once. The site fits the 1 GB Pages limit, and Pages answers
+_GitHub Actions_ once. The site fits the 1 GB Pages limit, and Pages answers
 `Range` requests, which the waveform loader depends on.
 
 The release tag is the bundle's content hash, so re-running the script on an
@@ -229,7 +229,7 @@ pretending 2026 dominates 2023.
 On a phone the filter panel collapses behind a toggle so the data is above the
 fold, each dimension is its own disclosure with a count badge, the table folds
 to five columns instead of scrolling sideways, and a tap does the job hover
-does on a desktop: it selects the run *and* leaves the readout up until the
+does on a desktop: it selects the run _and_ leaves the readout up until the
 next tap.
 
 `scripts/ui_smoke.mjs` drives the real thing over CDP — screenshots prove it
@@ -270,14 +270,14 @@ shipping precomputed curves.
 
 ## Schema
 
-| table | grain |
-| --- | --- |
-| `dataset` | one summit year, with the archive's SHA-256 |
-| `test_run` | one suppressor on one host/cartridge on one day |
-| `summary_metric` | run × mic, straight from `all.csv` |
-| `waveform` | run × mic × shot, with the samples as a compressed blob |
-| `shot_metric` | run × mic × shot, recomputed by `analyze` |
-| `band_level` | run × mic × shot, 30 one-third-octave levels, from `bands` |
+| table            | grain                                                      |
+| ---------------- | ---------------------------------------------------------- |
+| `dataset`        | one summit year, with the archive's SHA-256                |
+| `test_run`       | one suppressor on one host/cartridge on one day            |
+| `summary_metric` | run × mic, straight from `all.csv`                         |
+| `waveform`       | run × mic × shot, with the samples as a compressed blob    |
+| `shot_metric`    | run × mic × shot, recomputed by `analyze`                  |
+| `band_level`     | run × mic × shot, 30 one-third-octave levels, from `bands` |
 
 Three views flatten the common cases: `v_measurement` (one row per run per
 mic), `v_run` (one row per run, all mics pivoted, plus cylinder volume), and
@@ -303,7 +303,7 @@ cannot support — the eight quietest .223 cans on `5.56-16AR` span 1.72 dBA in
 total, under three standard errors end to end. Every `*_dba`/`*_db` column in
 the web bundle has a `*_sem` companion, the scatter draws ±1 SEM bars whenever
 the slice is sparse enough to read them, and the readout says how many other
-visible runs are *not* distinguishable from the one you picked.
+visible runs are _not_ distinguishable from the one you picked.
 
 **First-round pop.** The first shot through a cold, air-filled can is louder;
 the median is +1.13 dBA and it is positive in 72% of run/mic combinations.
@@ -320,7 +320,7 @@ per-measure property rather than a global setting.
 against a direct periodogram to 0.0000 dB. Shots are averaged in energy, not in
 decibels. Two scalars come out of it — energy at or below 250 Hz, where
 A-weighting has rolled off ~9 dB and stops reporting what you feel, and the
-spectral centroid. The chart plots energy *per Hz*: proportional-bandwidth
+spectral centroid. The chart plots energy _per Hz_: proportional-bandwidth
 bands widen as they climb, so raw band levels slope up about 1 dB per band on
 any signal and read as "it's all treble" regardless of content. The stored
 levels are raw — the energy sums need the widths in — and only the plot divides
@@ -345,31 +345,31 @@ python3 -m pytest
 
 ## Notes on the data
 
-* 2023 names each shot directory outright. From 2024 on, PULSE names the first
+- 2023 names each shot directory outright. From 2024 on, PULSE names the first
   export `- Input.txt` and later ones `- Input.1` onwards, so the filename
-  suffix is *not* the shot order; shots are numbered by the capture timestamp
+  suffix is _not_ the shot order; shots are numbered by the capture timestamp
   in the header instead. The 2025 set adds an `Input.5` symlink to `Input.txt`
   in most runs, which agrees.
-* 2023 saved more shots than it published in a few runs. Every capture is
+- 2023 saved more shots than it published in a few runs. Every capture is
   stored; `test_run.shots` is how many the report averaged, and `verify` uses
   only those.
-* A handful of run directories disagree with the report on the suppressor
+- A handful of run directories disagree with the report on the suppressor
   name. Those are matched on manufacturer, host and physical dimensions, and
   the directory spelling is preserved in `test_run.archive_suppressor`.
-* Runs that were photographed but not fired carry a note prefix on the spec
+- Runs that were photographed but not fired carry a note prefix on the spec
   filename (`DNR Specs.txt`, `Did not Run Specs.txt`); that lands in
   `test_run.note`, and `test_run.in_summary` marks whether the run made it
   into the published table.
-* `Specs.txt` lists length *before* weight, the opposite of the `all.csv`
+- `Specs.txt` lists length _before_ weight, the opposite of the `all.csv`
   column order.
-* A physical dimension of `0.0` means "not applicable", not "zero", and is
+- A physical dimension of `0.0` means "not applicable", not "zero", and is
   stored as NULL. Six 2024 rows carry zeros: the five bare-muzzle references,
   and Innovative Arms' IASW, an integrally-suppressed rifle whose can is the
   barrel. Taken literally a 0 oz, 0 in suppressor is lighter and shorter than
-  anything real — before the fix IASW ranked as the lightest *and* shortest
+  anything real — before the fix IASW ranked as the lightest _and_ shortest
   suppressor in the dataset and sat unbeatable on every weight or length
   frontier.
-* One published dimension is not missing but **wrong**. The 2024 table gives
+- One published dimension is not missing but **wrong**. The 2024 table gives
   YHM's Turbo T3 a length of 1.88 in; the 2023 table has the same can at
   6.9 in. Only that cell is bad — the row is its full 27 columns, and the
   weight and diameter on either side agree with 2023 (17.5 vs 17.54 oz,
@@ -381,27 +381,27 @@ python3 -m pytest
   2023, because a measurement taken a year earlier is not evidence about what
   was on the bench in 2024. Unlike `tbacss/caveats.py`, nothing in the report
   flags this one — it is our finding, not TBAC's.
-* **TBAC published a warning that is not in the data.** The 2024 `.22LR-BA`
+- **TBAC published a warning that is not in the data.** The 2024 `.22LR-BA`
   host was a last-minute substitute after a rifle malfunction, and it rings at
-  the shooter's-ear mic on roughly half the shots: *"it is probably best to
-  ignore the SE numbers for this run of .22's"*. That is 26 runs whose SE
+  the shooter's-ear mic on roughly half the shots: _"it is probably best to
+  ignore the SE numbers for this run of .22's"_. That is 26 runs whose SE
   figures should not be ranked on, and it lives only in the report prose, so
   anything built on `all.csv` alone would use them. `tbacss/caveats.py` makes
   it machine-readable, `publish` flags the affected runs, and the explorer
   marks them. It is the only substantive advisory across all four years —
   found by grepping every report for advisory language, not by luck.
-* Host codes are not in `all.csv` — they are prose in each year's report.
-  `tbacss/hosts.py` is that prose *parsed*, covering all 52 codes, and
+- Host codes are not in `all.csv` — they are prose in each year's report.
+  `tbacss/hosts.py` is that prose _parsed_, covering all 52 codes, and
   `publish` both ships it and joins it onto every run as `host_barrel_in`,
   `host_cycling`, `host_platform`, `host_ammo` and `host_grains`. So the two
   biggest confounders in the dataset stop being locked inside a string:
 
-  | attribute | coverage | values |
-  | --- | ---: | --- |
-  | `host_cycling` | 1182 / 1185 runs | 581 manual, 601 self-loading |
-  | `host_barrel_in` | 1076 / 1185 runs | 4" to 27" |
-  | `host_platform` | 1184 / 1185 runs | bolt, AR, pistol, PCC, lever, rifle |
-  | `host_ammo` | 1170 / 1185 runs | 390 subsonic, 780 supersonic |
+  | attribute        |         coverage | values                              |
+  | ---------------- | ---------------: | ----------------------------------- |
+  | `host_cycling`   | 1182 / 1185 runs | 581 manual, 601 self-loading        |
+  | `host_barrel_in` | 1076 / 1185 runs | 4" to 27"                           |
+  | `host_platform`  | 1184 / 1185 runs | bolt, AR, pistol, PCC, lever, rifle |
+  | `host_ammo`      | 1170 / 1185 runs | 390 subsonic, 780 supersonic        |
 
   Cycling matters because TBAC's own FAQ says so: "suppressors shot on 5.56
   will never have their peak less than the SS crack because the action noise
@@ -431,27 +431,27 @@ python3 -m pytest
   Codes were reused loosely: 2023's bare `5.56` is a 10.3" MK18 while 2024's
   `5.56-16AR` is a 16" DD, so attributes are per code and never assumed to
   carry across years.
-* The unsuppressed reference is manufacturer `Bare Muzzle` in 2023 and `Bare`
+- The unsuppressed reference is manufacturer `Bare Muzzle` in 2023 and `Bare`
   from 2024 on; `test_run.is_baseline` flags either. 2023 has two, 2025 three,
   and the 2026 table has none.
-* PULSE fills the unused tail of its capture buffer with `Undefined`. 2024 ran
+- PULSE fills the unused tail of its capture buffer with `Undefined`. 2024 ran
   the .22LR bolt gun with a 0.1 s capture into the same 0.5 s buffer, so 465
   records come back 104448 rows short by design. Those are stored at their real
   length and flagged as short captures, not as damage.
-* Two genuine defects exist across all four archives, both in 2023:
+- Two genuine defects exist across all four archives, both in 2023:
   `Day1/AB/Raptor 10` has a directory literally named `XX Shot 4 did not
   record` whose files are entirely `Undefined`, and one Otter Creek `Hydrogen
   L` file is cut off at 127805 of 131072 rows with three byte-corrupted
   numbers in the tail. The truncation is past the analysis window, so that
   record is kept and flagged rather than dropped.
-* Unparseable samples become NaN, never a guessed value; `waveform.defect_count`
+- Unparseable samples become NaN, never a guessed value; `waveform.defect_count`
   and `defects_json` record which. `analysis.fill_defects` interpolates runs of
   at most 8 samples (30 µs) and refuses anything longer.
-* Names are entered by hand and are not normalised, within a year or across
+- Names are entered by hand and are not normalised, within a year or across
   them: `Theorem S` / `Theorem-S`, `AEM5K` / `AEM5k`, `RXD910TI` / `RXD910Ti`,
   `Wraith Metalworks` (2025) / `Wraith Metal Works` (2026). Do not join on
   name without cleaning first.
-* `waveform.overload` carries the DAQ's clipping flag. In 2025 it is set on
+- `waveform.overload` carries the DAQ's clipping flag. In 2025 it is set on
   exactly 15 records, all of them the unsuppressed .300 Win Mag baseline,
   which peaks near 10 kPa.
 
