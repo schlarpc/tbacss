@@ -93,9 +93,7 @@ def main() -> int:
         out += [
             f"* file: `{row['archive_name']}`",
             f"* url: {url}",
-            f"* size: {size:,} bytes ({size / 1e9:.2f} GB)"
-            if size
-            else "* size: _not recorded_",
+            f"* size: {size:,} bytes ({size / 1e9:.2f} GB)" if size else "* size: _not recorded_",
             f"* sha256: `{row['archive_sha256'] or 'not recorded'}`",
             f"* report: {row['report_url']}",
             f"* imported: {row['imported_at']}",

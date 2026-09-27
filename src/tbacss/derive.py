@@ -30,13 +30,13 @@ from dataclasses import dataclass
 import numpy as np
 
 __all__ = [
-    "METRICS",
     "LOW_FREQUENCY_HZ",
-    "band_statistics",
+    "METRICS",
     "RunStats",
-    "run_statistics",
-    "net_reduction",
+    "band_statistics",
     "indistinguishable",
+    "net_reduction",
+    "run_statistics",
 ]
 
 #: Per-shot column -> the shot-averaged column it corresponds to in all.csv.
@@ -183,9 +183,7 @@ def band_statistics(db, centres) -> dict[tuple[int, str], dict]:
         out[key] = {
             "levels": levels,
             "low_frequency_db": (
-                float(10 * np.log10(mean_power[low].sum()))
-                if mean_power[low].sum() > 0
-                else None
+                float(10 * np.log10(mean_power[low].sum())) if mean_power[low].sum() > 0 else None
             ),
             "centroid_hz": (
                 float((frequencies * mean_power).sum() / total) if total > 0 else None

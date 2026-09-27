@@ -39,11 +39,10 @@ from pathlib import Path
 import numpy as np
 
 from . import blobs, wavecodec
-from .caveats import CAVEATS, as_dicts, caveats_for
-from .analysis import BAND_CENTRES
+from .analysis import BAND_CENTRES, TIME_START_S, TIME_STOP_S, TIME_STOP_SHORT_S, is_short_window
+from .caveats import as_dicts, caveats_for
 from .derive import band_statistics, net_reduction, run_statistics
 from .hosts import HOSTS, Host
-from .analysis import TIME_START_S, TIME_STOP_S, TIME_STOP_SHORT_S, is_short_window
 
 __all__ = ["ENVELOPE_BUCKETS", "PublishReport", "publish"]
 
@@ -124,10 +123,7 @@ class PublishReport:
         for name, size in self.files.items():
             lines.append(f"{name:22}{size:14,}{size / 1e6:9.2f}")
         total = sum(self.files.values())
-        eager = sum(
-            v for k, v in self.files.items()
-            if k.endswith(".json") and k != "bands.json"
-        )
+        eager = sum(v for k, v in self.files.items() if k.endswith(".json") and k != "bands.json")
         lines += [
             f"{'TOTAL':22}{total:14,}{total / 1e6:9.2f}",
             "",
@@ -144,9 +140,7 @@ def _finite(values: list) -> list:
     accepts -- the browser's fetch().json() rejects the whole file. Guard the
     boundary rather than trusting every upstream column to be clean.
     """
-    return [
-        None if isinstance(v, float) and not math.isfinite(v) else v for v in values
-    ]
+    return [None if isinstance(v, float) and not math.isfinite(v) else v for v in values]
 
 
 def _encode_text_column(values: list) -> tuple[list[str], list[int]]:
@@ -274,9 +268,7 @@ def publish(
         # ship the transcription with the data rather than making every reader
         # decode ".50BW-SUB-10.5AR" for themselves.
         used = set(catalog["dictionaries"]["cartridge"])
-        catalog["hosts"] = {
-            code: asdict(host) for code, host in HOSTS.items() if code in used
-        }
+        catalog["hosts"] = {code: asdict(host) for code, host in HOSTS.items() if code in used}
 
         # Join the host attributes onto every run as real columns, so the same
         # filter and frontier code works on them without a special case. The
@@ -313,8 +305,7 @@ def publish(
         # published tables leave out. See tbacss.derive for why each matters.
         ids = [r["test_run_id"] for r in runs]
         stats = {
-            metric: run_statistics(db, metric)
-            for metric in {m for _, m in _MIC_METRIC.values()}
+            metric: run_statistics(db, metric) for metric in {m for _, m in _MIC_METRIC.values()}
         }
         for column, (mic, metric) in _MIC_METRIC.items():
             if column not in catalog["columns"]:
@@ -331,11 +322,7 @@ def publish(
         for column, mic in (("se_first_round_pop", "SE"), ("ml_first_round_pop", "ML")):
             catalog["columns"][column] = _finite(
                 [
-                    (
-                        pop.get((run_id, mic)).first_round_pop
-                        if pop.get((run_id, mic))
-                        else None
-                    )
+                    (pop.get((run_id, mic)).first_round_pop if pop.get((run_id, mic)) else None)
                     for run_id in ids
                 ]
             )
@@ -347,9 +334,7 @@ def publish(
             ("ml_reduction_db", "ML", "peak_db"),
         ):
             reduction = net_reduction(db, metric)
-            catalog["columns"][column] = _finite(
-                [reduction.get((run_id, mic)) for run_id in ids]
-            )
+            catalog["columns"][column] = _finite([reduction.get((run_id, mic)) for run_id in ids])
 
         # One-third-octave spectra. Two scalars go in the catalog so they can
         # be filtered and plotted; the full curves ship separately and are
@@ -362,10 +347,7 @@ def publish(
                 ("se_centroid_hz", "SE", "centroid_hz"),
             ):
                 catalog["columns"][column] = _finite(
-                    [
-                        (bands.get((run_id, mic)) or {}).get(field)
-                        for run_id in ids
-                    ]
+                    [(bands.get((run_id, mic)) or {}).get(field) for run_id in ids]
                 )
             catalog["band_centres"] = [round(f, 1) for f in BAND_CENTRES]
 
@@ -416,23 +398,26 @@ def publish(
             # rebuild an index that is already on disk and unchanged.
             if not (env_path.exists() and raw_path.exists() and index_path.exists()):
                 raise SystemExit(
-                    f"catalog_only needs an existing bundle in {out}; "
-                    "run a full publish first"
+                    f"catalog_only needs an existing bundle in {out}; run a full publish first"
                 )
             waveform_index = json.loads(index_path.read_text())
             report.waveforms = waveform_index["n"]
             _write_json(out, catalog, shot_table, waveform_index)
             _write_bands(out, bands, run_ids=ids)
-            return _measure(out, report, waveform_index["n"] * buckets * 4,
-                            sum(waveform_index["columns"]["raw_len"]))
+            return _measure(
+                out,
+                report,
+                waveform_index["n"] * buckets * 4,
+                sum(waveform_index["columns"]["raw_len"]),
+            )
 
         entries = []
         with open(env_path, "wb") as env_file, open(raw_path, "wb") as raw_file:
             env_offset = raw_offset = 0
             for position, row in enumerate(index):
-                blob = db.query(
-                    "SELECT samples FROM waveform WHERE id = ?", (row["id"],)
-                )[0]["samples"]
+                blob = db.query("SELECT samples FROM waveform WHERE id = ?", (row["id"],))[0][
+                    "samples"
+                ]
                 samples = blobs.decode(blob, row["codec"])
                 window = _analysis_window(
                     samples, row["dt_s"], row["cartridge"], row["year"]
@@ -523,9 +508,7 @@ def publish(
 
 def _has_bands(db) -> bool:
     return bool(
-        db.query(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='band_level'"
-        )
+        db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='band_level'")
         and db.query("SELECT 1 FROM band_level LIMIT 1")
     )
 
@@ -544,8 +527,10 @@ def _write_bands(out: Path, bands: dict, run_ids: list[int]) -> None:
             None if v != v else round(float(v), 1) for v in entry["levels"]
         ]
     (out / "bands.json").write_text(
-        json.dumps({"centres": [round(f, 1) for f in BAND_CENTRES], "runs": payload},
-                   separators=(",", ":"))
+        json.dumps(
+            {"centres": [round(f, 1) for f in BAND_CENTRES], "runs": payload},
+            separators=(",", ":"),
+        )
     )
 
 
@@ -596,7 +581,6 @@ def _measure(out: Path, report, expected_env: int, expected_raw: int):
     ):
         if report.files[name] != expected:
             raise RuntimeError(
-                f"{name} is {report.files[name]} bytes, "
-                f"but the index implies {expected}"
+                f"{name} is {report.files[name]} bytes, but the index implies {expected}"
             )
     return report

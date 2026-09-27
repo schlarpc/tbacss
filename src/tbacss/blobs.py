@@ -16,7 +16,7 @@ import zlib
 
 import numpy as np
 
-__all__ = ["CODEC", "encode", "decode"]
+__all__ = ["CODEC", "decode", "encode"]
 
 CODEC = "f32le-zlib"
 

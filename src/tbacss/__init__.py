@@ -18,19 +18,19 @@ from .pulse import PulseParseError, PulseWaveform, parse_pulse, parse_pulse_file
 from .summit import MICS, Specs, SummaryRow, read_summary_csv
 
 __all__ = [
-    "BuildReport",
     "MICS",
+    "BuildReport",
     "PulseParseError",
     "PulseWaveform",
     "Specs",
     "SummaryRow",
     "SummitDB",
     "Waveform",
+    "__version__",
     "build",
     "parse_pulse",
     "parse_pulse_file",
     "read_summary_csv",
-    "__version__",
 ]
 
 __version__: str = _importlib_metadata.version(__package__ or __name__)

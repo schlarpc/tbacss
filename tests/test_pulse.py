@@ -40,9 +40,7 @@ def make_export(values, *, signal="Mil Left", date="8/18/2025", time="15:40:50:0
         f"Date:\t \t{date}",
         f"Time:\t \t{time}",
     ]
-    body = [
-        f"{i + 1}\t  {i * DT:.10e}\t {value: .5e}" for i, value in enumerate(values)
-    ]
+    body = [f"{i + 1}\t  {i * DT:.10e}\t {value: .5e}" for i, value in enumerate(values)]
     footer = [
         "TagsBegin:\t \t ",
         "OverLoad:\t \tFalse",

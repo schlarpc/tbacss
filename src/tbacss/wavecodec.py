@@ -37,7 +37,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-__all__ = ["CODEC", "encode", "decode", "quantize", "EncodedWaveform"]
+__all__ = ["CODEC", "EncodedWaveform", "decode", "encode", "quantize"]
 
 CODEC = "fixed2-rice-v1"
 
@@ -114,7 +114,7 @@ def _choose_k(zigzag: np.ndarray) -> int:
 
 
 class _BitWriter:
-    __slots__ = ("_chunks", "_acc", "_used")
+    __slots__ = ("_acc", "_chunks", "_used")
 
     def __init__(self) -> None:
         self._chunks = bytearray()
@@ -193,9 +193,7 @@ def encode(
             if k:
                 writer.write(value, k)
 
-    header = _HEADER.pack(
-        _MAGIC, _VERSION, order, bits, block_log2, codes.size, scale
-    )
+    header = _HEADER.pack(_MAGIC, _VERSION, order, bits, block_log2, codes.size, scale)
     warmup = seeds.astype("<i4").tobytes()
     return EncodedWaveform(
         payload=header + warmup + bytes(parameters) + writer.finish(),
@@ -214,9 +212,7 @@ def decode(payload: bytes) -> np.ndarray:
         raise ValueError(f"unsupported frame version {version}")
 
     offset = _HEADER.size
-    seeds = np.frombuffer(payload, dtype="<i4", count=order, offset=offset).astype(
-        np.int64
-    )
+    seeds = np.frombuffer(payload, dtype="<i4", count=order, offset=offset).astype(np.int64)
     offset += 4 * order
 
     block = 1 << block_log2

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-__all__ = ["Caveat", "CAVEATS", "caveats_for"]
+__all__ = ["CAVEATS", "Caveat", "caveats_for"]
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,7 @@ CAVEATS: tuple[Caveat, ...] = (
             "roughly half the shots, and only at the shooter's-ear mic. TBAC's "
             "own example: the El Jefe and Abel PI have near-identical mil-left "
             "and mil-right figures but differ by 3.5 dBA at the ear, entirely "
-            "because of the harmonic. Their advice is that \"it is probably "
+            'because of the harmonic. Their advice is that "it is probably '
             "best to ignore the SE numbers for this run of .22's\". The muzzle "
             "mics are unaffected."
         ),
@@ -58,9 +58,7 @@ CAVEATS: tuple[Caveat, ...] = (
 
 def caveats_for(year: int, cartridge: str) -> tuple[Caveat, ...]:
     """Every caveat that applies to a run, which is usually none."""
-    return tuple(
-        c for c in CAVEATS if c.year == year and c.cartridge == cartridge
-    )
+    return tuple(c for c in CAVEATS if c.year == year and c.cartridge == cartridge)
 
 
 def as_dicts() -> list[dict]:

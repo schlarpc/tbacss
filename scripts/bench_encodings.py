@@ -15,22 +15,19 @@ import argparse
 import bz2
 import lzma
 import subprocess
-import sys
 import zlib
-from pathlib import Path
 
 import numpy as np
 
-
 from tbacss import SummitDB
-from tbacss.analysis import P_0, shot_metrics
-from tbacss.analysis import TIME_START_S
+from tbacss.analysis import P_0, TIME_START_S, shot_metrics
 from tbacss.webexport import _analysis_window
 
 
 def _window_offset(dt: float) -> int:
     """Index in the full record where the analysis window starts."""
     return int(np.floor(TIME_START_S / dt + 0.5)) - 1
+
 
 # ---------------------------------------------------------------- quantisers
 
@@ -100,9 +97,7 @@ def best_flac_like(codes: np.ndarray) -> tuple[int, int]:
 
 
 def zstd(payload: bytes, level: int = 19) -> int:
-    out = subprocess.run(
-        ["zstd", f"-{level}", "-c", "-q"], input=payload, capture_output=True
-    )
+    out = subprocess.run(["zstd", f"-{level}", "-c", "-q"], input=payload, capture_output=True)
     return len(out.stdout)
 
 
@@ -166,7 +161,7 @@ def main() -> int:
             measure("int16 delta + zstd-19", zstd(delta), n, table)
 
             size16, order16 = best_flac_like(codes16)
-            measure(f"int16 FLAC-fixed+Rice", size16, n, table)
+            measure("int16 FLAC-fixed+Rice", size16, n, table)
             size24, _ = best_flac_like(codes24)
             measure("int24 FLAC-fixed+Rice", size24, n, table)
             table.setdefault("_order16", []).append(order16)
@@ -206,7 +201,7 @@ def main() -> int:
 
     print(f"\nbest fixed-predictor order (int16): {list(order_counts)} for orders 0-4")
 
-    print(f"\nworst metric error, dB")
+    print("\nworst metric error, dB")
     print(f"{'quantiser':12}{'peak':>10}{'peak dBA':>10}{'impulse':>10}{'Leq':>10}")
     for name, bucket in errors.items():
         print(

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import re
-import shutil
 from functools import partial
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -117,8 +116,9 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--directory", default="web")
-    parser.add_argument("--cache", action="store_true",
-                        help="send long cache headers for /data, as a CDN would")
+    parser.add_argument(
+        "--cache", action="store_true", help="send long cache headers for /data, as a CDN would"
+    )
     args = parser.parse_args()
 
     root = Path(args.directory).resolve()

@@ -14,13 +14,12 @@ from __future__ import annotations
 import argparse
 import re
 import sqlite3
-import sys
 from collections import defaultdict
 from pathlib import Path
 
-
 from tbacss.hosts import host_description
 from tbacss.summit import read_summary_csv
+
 
 def load_waveform_stats(db_path: Path) -> dict[int, dict]:
     if not db_path.exists():
@@ -102,12 +101,12 @@ def main() -> int:
     calibers = {r.caliber for rows in years.values() for r in rows}
     # Ties break on the name: the set's order changes with every interpreter,
     # and the file should only change when the data does.
-    for caliber in sorted(calibers, key=lambda c: (-sum(
-        sum(1 for r in years[y] if r.caliber == c) for y in ordered
-    ), c)):
+    for caliber in sorted(
+        calibers,
+        key=lambda c: (-sum(sum(1 for r in years[y] if r.caliber == c) for y in ordered), c),
+    ):
         counts = [
-            str(sum(1 for r in years[year] if r.caliber == caliber) or "--")
-            for year in ordered
+            str(sum(1 for r in years[year] if r.caliber == caliber) or "--") for year in ordered
         ]
         out.append(f"| {caliber} | " + " | ".join(counts) + " |")
     out.append("")
@@ -117,9 +116,10 @@ def main() -> int:
     out.append(f"| code | host / ammunition | {header} |")
     out.append("| --- | --- |" + " ---: |" * len(ordered))
     cartridges = {r.cartridge for rows in years.values() for r in rows}
-    for cartridge in sorted(cartridges, key=lambda c: (-sum(
-        sum(1 for r in years[y] if r.cartridge == c) for y in ordered
-    ), c)):
+    for cartridge in sorted(
+        cartridges,
+        key=lambda c: (-sum(sum(1 for r in years[y] if r.cartridge == c) for y in ordered), c),
+    ):
         counts = [
             str(sum(1 for r in years[year] if r.cartridge == cartridge) or "--")
             for year in ordered
@@ -149,13 +149,8 @@ def main() -> int:
         for model in sorted(models, key=str.lower):
             per_year = models[model]
             bores = sorted({c for cals in per_year.values() for c in cals})
-            marks = [
-                str(len(per_year[year])) if year in per_year else "--"
-                for year in ordered
-            ]
-            out.append(
-                f"| {model} | {', '.join(bores)} | " + " | ".join(marks) + " |"
-            )
+            marks = [str(len(per_year[year])) if year in per_year else "--" for year in ordered]
+            out.append(f"| {model} | {', '.join(bores)} | " + " | ".join(marks) + " |")
         out.append("")
 
     args.output.write_text("\n".join(out) + "\n")

@@ -12,25 +12,25 @@ import re
 from dataclasses import dataclass
 
 __all__ = [
-    "MICS",
+    "IGNORED_FILENAMES",
     "METRIC_COLUMNS",
-    "RunKey",
+    "MICS",
+    "NOTE_FILENAME",
     "SPEC_DEFECTS",
     "RunDir",
+    "RunKey",
     "Specs",
     "SummaryRow",
     "WaveformName",
-    "parse_event",
-    "parse_run_dir",
-    "parse_specs",
-    "parse_spec_filename",
-    "parse_waveform_filename",
-    "read_summary_csv",
     "is_baseline_manufacturer",
     "is_reference_run",
     "is_void_capture",
-    "IGNORED_FILENAMES",
-    "NOTE_FILENAME",
+    "parse_event",
+    "parse_run_dir",
+    "parse_spec_filename",
+    "parse_specs",
+    "parse_waveform_filename",
+    "read_summary_csv",
     "signal_to_mic",
     "split_member_path",
 ]
@@ -59,7 +59,9 @@ METRIC_COLUMNS = {
 }
 
 # "Nixis 30K (.30 on .300BO-16BA)" -- the space before "(" is not always there.
-_RUN_DIR = re.compile(r"^(?P<suppressor>.*?)\s*\((?P<caliber>[^()]+?)\s+on\s+(?P<cartridge>[^()]+?)\)$")
+_RUN_DIR = re.compile(
+    r"^(?P<suppressor>.*?)\s*\((?P<caliber>[^()]+?)\s+on\s+(?P<cartridge>[^()]+?)\)$"
+)
 
 # 2023 wraps everything in one top-level directory and puts each shot in its
 # own "Shot N" subdirectory; 2024 onwards drop both.
@@ -107,8 +109,7 @@ def is_baseline_manufacturer(manufacturer: str) -> bool:
 def is_reference_run(manufacturer: str, cartridge: str) -> bool:
     """Whether a run measures something other than a suppressed shot."""
     return (
-        manufacturer in BASELINE_MANUFACTURERS
-        or cartridge.strip().lower() in REFERENCE_CARTRIDGES
+        manufacturer in BASELINE_MANUFACTURERS or cartridge.strip().lower() in REFERENCE_CARTRIDGES
     )
 
 
@@ -409,9 +410,7 @@ def read_summary_csv(path) -> list[SummaryRow]:
             metrics.setdefault(mic, {})[column] = num(row[index])
         shots = num(row[trailing["shots"]])
         label, date = parse_event(row[0])
-        key: RunKey = (
-            label, row[1].strip(), row[2].strip(), row[3].strip(), row[4].strip()
-        )
+        key: RunKey = (label, row[1].strip(), row[2].strip(), row[3].strip(), row[4].strip())
         defects = SPEC_DEFECTS.get(key, frozenset())
         dimensions = {
             "weight_oz": dimension(row[trailing["weight"]]),

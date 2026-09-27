@@ -66,9 +66,7 @@ def test_scale_survives_as_float64():
     """A float32 scale would round and break bit-exact decoding."""
     window = np.array([1e-4, -3.7e-4, 2.2e-4] * 100, dtype=np.float32)
     encoded = wavecodec.encode(window, bits=24)
-    np.testing.assert_array_equal(
-        wavecodec.decode(encoded.payload), quantised(window, 24)
-    )
+    np.testing.assert_array_equal(wavecodec.decode(encoded.payload), quantised(window, 24))
 
 
 def test_rejects_a_foreign_frame():

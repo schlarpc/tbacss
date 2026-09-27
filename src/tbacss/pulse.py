@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-__all__ = ["PulseWaveform", "PulseParseError", "parse_pulse", "parse_pulse_file"]
+__all__ = ["PulseParseError", "PulseWaveform", "parse_pulse", "parse_pulse_file"]
 
 # First data line: a bare "1" followed by a tab, at the start of a line.
 _DATA_START = re.compile(rb"(?m)^1\t")
@@ -296,9 +296,7 @@ def parse_pulse(raw: bytes, *, with_samples: bool = True) -> PulseWaveform:
 
     # The index column must start at 1, or we did not find the data block.
     if tokens[0] != b"1":
-        raise PulseParseError(
-            f"data block starts at index {tokens[0]!r}, expected 1"
-        )
+        raise PulseParseError(f"data block starts at index {tokens[0]!r}, expected 1")
 
     # Its last value should equal the row count, but a short or byte-damaged
     # tail is not fatal -- one 2023 file is cut off well past the analysis

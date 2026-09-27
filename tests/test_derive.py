@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tbacss.derive import RunStats, indistinguishable, run_statistics
+from tbacss.derive import indistinguishable, run_statistics
 
 
 class FakeDB:
@@ -35,8 +35,9 @@ def test_mean_and_standard_error_over_five_shots():
 
 
 def test_first_round_pop_is_shot_one_against_the_rest():
-    db = FakeDB(rows((1, "SE", 1, 20.0), (1, "SE", 2, 10.0),
-                     (1, "SE", 3, 10.0), (1, "SE", 4, 10.0)))
+    db = FakeDB(
+        rows((1, "SE", 1, 20.0), (1, "SE", 2, 10.0), (1, "SE", 3, 10.0), (1, "SE", 4, 10.0))
+    )
     assert run_statistics(db)[(1, "SE")].first_round_pop == pytest.approx(10.0)
 
 

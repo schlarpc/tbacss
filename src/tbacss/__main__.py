@@ -38,8 +38,10 @@ def _cmd_info(args) -> int:
             print(f"{row['year']}  {row['name']}")
             print(f"    imported     {row['imported_at']}")
             print(f"    report       {row['report_url']}")
-            print(f"    archive      {row['archive_name']}"
-                  + (f" ({size / 1e9:.2f} GB)" if size else ""))
+            print(
+                f"    archive      {row['archive_name']}"
+                + (f" ({size / 1e9:.2f} GB)" if size else "")
+            )
             if row["archive_url"]:
                 print(f"    source       {row['archive_url']}")
             if row["archive_sha256"]:
@@ -56,8 +58,7 @@ def _cmd_info(args) -> int:
                 (row["id"],) * 4,
             )[0]
             print(f"    runs         {counts['runs']} ({counts['published']} in all.csv)")
-            print(f"    waveforms    {counts['waveforms']}"
-                  f"  ({counts['samples'] or 0:,} samples)")
+            print(f"    waveforms    {counts['waveforms']}  ({counts['samples'] or 0:,} samples)")
     return 0
 
 
@@ -81,9 +82,8 @@ def _cmd_analyze(args) -> int:
 
     import numpy as np
 
-    from .analysis import P_0, shot_metrics
     from . import blobs
-
+    from .analysis import P_0, shot_metrics
     from .build import _migrate
 
     write = sqlite3.connect(args.database)
@@ -107,9 +107,9 @@ def _cmd_analyze(args) -> int:
         )
         total, done, failed = len(todo), 0, 0
         for row in todo:
-            blob = db.query(
-                "SELECT samples FROM waveform WHERE id = ?", (row["id"],)
-            )[0]["samples"]
+            blob = db.query("SELECT samples FROM waveform WHERE id = ?", (row["id"],))[0][
+                "samples"
+            ]
             samples = blobs.decode(blob, row["codec"])
             try:
                 m = shot_metrics(
@@ -123,10 +123,12 @@ def _cmd_analyze(args) -> int:
                 failed += 1
                 sys.stderr.write(f"\n  waveform {row['id']}: {error}\n")
                 continue
+
             # A level needs a positive pressure; a few very quiet records
             # integrate to exactly zero impulse under the reference window.
             def to_db(value):
                 return float(20.0 * np.log10(value / P_0)) if value > 0 else None
+
             write.execute(
                 """INSERT OR REPLACE INTO shot_metric
                        (waveform_id, peak_pa, peak_a_pa, impulse_pa_ms, peak_leq_pa,
@@ -160,11 +162,9 @@ def _cmd_bands(args) -> int:
     """Compute one-third-octave levels for every waveform."""
     import sqlite3
 
-    import numpy as np
-
+    from . import blobs
     from .analysis import BAND_CENTRES, third_octave_levels
     from .build import _migrate
-    from . import blobs
     from .webexport import _analysis_window
 
     write = sqlite3.connect(args.database)
@@ -187,9 +187,9 @@ def _cmd_bands(args) -> int:
         )
         total, done = len(todo), 0
         for row in todo:
-            blob = db.query(
-                "SELECT samples FROM waveform WHERE id = ?", (row["id"],)
-            )[0]["samples"]
+            blob = db.query("SELECT samples FROM waveform WHERE id = ?", (row["id"],))[0][
+                "samples"
+            ]
             window = _analysis_window(
                 blobs.decode(blob, row["codec"]),
                 row["dt_s"],
@@ -268,9 +268,7 @@ def _cmd_verify(args) -> int:
                         # reference averages "Shot 1".."Shot N" for the N in
                         # the table.
                         if run["shots"]:
-                            waveforms = [
-                                w for w in waveforms if w.shot <= run["shots"]
-                            ]
+                            waveforms = [w for w in waveforms if w.shot <= run["shots"]]
                         if not waveforms:
                             continue
                         shots = [
@@ -285,17 +283,14 @@ def _cmd_verify(args) -> int:
                     actual = average_metrics(shots)
                 except ValueError as error:
                     failed += 1
-                    print(
-                        f"  !! {run['manufacturer']} {run['suppressor']} {mic}: {error}"
-                    )
+                    print(f"  !! {run['manufacturer']} {run['suppressor']} {mic}: {error}")
                     continue
                 checked += 1
                 for column in columns:
                     if expected[column] is None:
                         continue
                     delta = abs(getattr(actual, column) - expected[column])
-                    if delta > worst[column]:
-                        worst[column] = delta
+                    worst[column] = max(worst[column], delta)
                     if delta > args.tolerance:
                         print(
                             f"  !! {run['manufacturer']} {run['suppressor']} "
@@ -346,9 +341,7 @@ def _cmd_wave(args) -> int:
             header="time_s,pressure_pa",
             comments="",
         )
-    print(
-        f"wrote {waveform.samples.size} samples from {waveform.archive_path} to {out}"
-    )
+    print(f"wrote {waveform.samples.size} samples from {waveform.archive_path} to {out}")
     return 0
 
 
@@ -365,8 +358,9 @@ def main(argv=None) -> int:
         help="release .tar.gz or extracted dir; omit to import the table only",
     )
     p.add_argument("--summary-csv", required=True, help="published all.csv")
-    p.add_argument("--archive-url", default=None,
-                   help="where --archive came from, recorded for provenance")
+    p.add_argument(
+        "--archive-url", default=None, help="where --archive came from, recorded for provenance"
+    )
     p.add_argument("--replace", action="store_true", help="re-import an existing year")
     p.add_argument("--quiet", action="store_true")
     p.set_defaults(func=_cmd_build)
@@ -381,9 +375,7 @@ def main(argv=None) -> int:
     p.add_argument("--view", default="v_measurement", choices=["v_run", "v_measurement"])
     p.set_defaults(func=_cmd_export)
 
-    p = sub.add_parser(
-        "analyze", help="compute per-shot metrics from the waveforms"
-    )
+    p = sub.add_parser("analyze", help="compute per-shot metrics from the waveforms")
     p.add_argument("database")
     p.add_argument("--year", type=int, default=None)
     p.add_argument("--replace", action="store_true", help="recompute everything")
@@ -395,9 +387,7 @@ def main(argv=None) -> int:
     p.add_argument("--replace", action="store_true")
     p.set_defaults(func=_cmd_bands)
 
-    p = sub.add_parser(
-        "verify", help="recompute all.csv from the waveforms and diff it"
-    )
+    p = sub.add_parser("verify", help="recompute all.csv from the waveforms and diff it")
     p.add_argument("database")
     p.add_argument("--year", type=int, default=None)
     p.add_argument("--limit", type=int, default=None, help="check only the first N runs")
@@ -408,10 +398,18 @@ def main(argv=None) -> int:
     p.add_argument("database")
     p.add_argument("output", help="directory to write the bundle into")
     p.add_argument("--buckets", type=int, default=2048, help="envelope resolution")
-    p.add_argument("--sample-bits", type=int, default=16, choices=[16, 24],
-                   help="quantiser depth for the full-rate tier")
-    p.add_argument("--catalog-only", action="store_true",
-                   help="rewrite the JSON only, leaving the .bin files as they are")
+    p.add_argument(
+        "--sample-bits",
+        type=int,
+        default=16,
+        choices=[16, 24],
+        help="quantiser depth for the full-rate tier",
+    )
+    p.add_argument(
+        "--catalog-only",
+        action="store_true",
+        help="rewrite the JSON only, leaving the .bin files as they are",
+    )
     p.add_argument("--quiet", action="store_true")
     p.set_defaults(func=_cmd_publish)
 

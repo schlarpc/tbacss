@@ -12,16 +12,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from tbacss import SummitDB, wavecodec  # noqa: E402
-from tbacss.analysis import P_0, TIME_START_S, a_weighting, shot_metrics  # noqa: E402
-from tbacss.webexport import _analysis_window  # noqa: E402
+from tbacss import SummitDB, wavecodec
+from tbacss.analysis import P_0, TIME_START_S, a_weighting, shot_metrics
+from tbacss.webexport import _analysis_window
 
 SAMPLE_RATE = 262144.0
 
@@ -81,7 +78,7 @@ def main() -> int:
                 cartridge=row["cartridge"],
                 year=row["year"],
             )
-            to_db = lambda v: float(20 * np.log10(v / P_0))  # noqa: E731
+            to_db = lambda v: float(20 * np.log10(v / P_0))
             meta["records"].append(
                 {
                     "file": name,

@@ -25,22 +25,22 @@ import numpy as np
 from . import blobs
 from .pulse import PulseParseError, parse_pulse
 from .summit import (
+    IGNORED_FILENAMES,
+    NOTE_FILENAME,
     RunDir,
     Specs,
     SummaryRow,
+    is_reference_run,
+    is_void_capture,
     parse_run_dir,
     parse_spec_filename,
     parse_specs,
     parse_waveform_filename,
-    is_reference_run,
-    is_void_capture,
-    IGNORED_FILENAMES,
-    NOTE_FILENAME,
     read_summary_csv,
     split_member_path,
 )
 
-__all__ = ["build", "BuildReport"]
+__all__ = ["BuildReport", "build"]
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
@@ -206,9 +206,9 @@ class _SummaryIndex:
         self.by_key = {row.key: row for row in rows}
         self.by_host: dict[tuple, list[SummaryRow]] = defaultdict(list)
         for row in rows:
-            self.by_host[
-                (row.event_label, row.manufacturer, row.caliber, row.cartridge)
-            ].append(row)
+            self.by_host[(row.event_label, row.manufacturer, row.caliber, row.cartridge)].append(
+                row
+            )
         self.used: set[tuple] = set()
 
     def match(self, run: RunDir, specs: Specs | None) -> tuple[SummaryRow | None, str]:
@@ -256,9 +256,7 @@ _MIGRATIONS = (
 
 def _migrate(connection: sqlite3.Connection) -> None:
     for table, column, definition in _MIGRATIONS:
-        existing = {
-            row[1] for row in connection.execute(f"PRAGMA table_info({table})")
-        }
+        existing = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
         if existing and column not in existing:
             connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
@@ -304,9 +302,7 @@ def build(
 
     connection = _connect(db_path)
     with connection:
-        existing = connection.execute(
-            "SELECT id FROM dataset WHERE year = ?", (year,)
-        ).fetchone()
+        existing = connection.execute("SELECT id FROM dataset WHERE year = ?", (year,)).fetchone()
         if existing:
             if not replace:
                 raise SystemExit(
@@ -394,8 +390,7 @@ def build(
             )
         if waveform.truncated or waveform.index_inconsistent:
             report.truncated.append(
-                f"{path} ({waveform.n_samples} of "
-                f"{waveform.declared_samples} samples)"
+                f"{path} ({waveform.n_samples} of {waveform.declared_samples} samples)"
             )
         if waveform.defects:
             report.defective.append(f"{path} ({len(waveform.defects)} samples)")

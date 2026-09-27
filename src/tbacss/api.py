@@ -56,7 +56,7 @@ class SummitDB:
         self.connection = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True)
         self.connection.row_factory = sqlite3.Row
 
-    def __enter__(self) -> "SummitDB":
+    def __enter__(self) -> SummitDB:
         return self
 
     def __exit__(self, *exc) -> None:

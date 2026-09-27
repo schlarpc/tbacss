@@ -28,8 +28,8 @@ from scipy.signal import bilinear, lfilter
 
 __all__ = [
     "BAND_CENTRES",
-    "ShotMetrics",
     "RunMetrics",
+    "ShotMetrics",
     "a_weighting",
     "average_metrics",
     "fill_defects",
@@ -76,9 +76,7 @@ def fill_defects(samples: np.ndarray, max_gap: int = MAX_INTERPOLATED_GAP) -> np
 
     filled = samples.astype(np.float64, copy=True)
     present = ~missing
-    filled[missing] = np.interp(
-        np.flatnonzero(missing), np.flatnonzero(present), filled[present]
-    )
+    filled[missing] = np.interp(np.flatnonzero(missing), np.flatnonzero(present), filled[present])
     return filled
 
 
@@ -211,9 +209,7 @@ def shot_metrics(
 #: One-third-octave band centres, IEC 61260 preferred numbers, 25 Hz to 20 kHz.
 #: The top band is under half the 262 kHz sample rate by a wide margin, so
 #: nothing here is fighting the anti-alias filter.
-BAND_CENTRES: tuple[float, ...] = tuple(
-    1000.0 * 10 ** (n / 10) for n in range(-16, 14)
-)
+BAND_CENTRES: tuple[float, ...] = tuple(1000.0 * 10 ** (n / 10) for n in range(-16, 14))
 
 
 def third_octave_levels(
