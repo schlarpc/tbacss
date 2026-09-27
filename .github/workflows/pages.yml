@@ -20,7 +20,7 @@ jobs:
     outputs:
       pinned: ${{ steps.pin.outputs.pinned }}
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
       # Nothing to deploy until scripts/release_data.sh has pinned a bundle.
       - id: pin
         run: |
