@@ -6,7 +6,7 @@ This is a port of the Octave the Summit report links from its CODE section --
 the stored waveforms.  ``python -m tbacss verify`` does exactly that, which is
 the check that the archive was parsed correctly.
 
-Metric definitions, from the report:
+Metric definitions, from the report::
 
     peak       maximum of the pressure curve
     impulse    area under the pressure curve up to the "trough", the minimum
