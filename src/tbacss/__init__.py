@@ -10,6 +10,8 @@
 Build a database with ``python -m tbacss build``.
 """
 
+import importlib.metadata as _importlib_metadata
+
 from .api import SummitDB, Waveform
 from .build import BuildReport, build
 from .pulse import PulseParseError, PulseWaveform, parse_pulse, parse_pulse_file
@@ -28,4 +30,7 @@ __all__ = [
     "parse_pulse",
     "parse_pulse_file",
     "read_summary_csv",
+    "__version__",
 ]
+
+__version__: str = _importlib_metadata.version(__package__ or __name__)

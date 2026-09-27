@@ -1,0 +1,14 @@
+{
+  "template": "https://github.com/schlarpc/python-base-flake",
+  "commit": "5d9bc61c9b67cd781ae3cf53ad24c4bbdeaac832",
+  "checkout": "template",
+  "context": {
+    "cookiecutter": {
+      "project_name": "tbacss",
+      "module_name": "tbacss",
+      "_template": "https://github.com/schlarpc/python-base-flake",
+      "_commit": "5d9bc61c9b67cd781ae3cf53ad24c4bbdeaac832"
+    }
+  },
+  "directory": null
+}

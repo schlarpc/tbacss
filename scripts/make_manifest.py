@@ -18,10 +18,9 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tbacss.hosts import host_description  # noqa: E402
-from tbacss.summit import read_summary_csv  # noqa: E402
+from tbacss.hosts import host_description
+from tbacss.summit import read_summary_csv
 
 def load_waveform_stats(db_path: Path) -> dict[int, dict]:
     if not db_path.exists():

@@ -21,12 +21,11 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tbacss import SummitDB  # noqa: E402
-from tbacss.analysis import P_0, shot_metrics  # noqa: E402
-from tbacss.analysis import TIME_START_S  # noqa: E402
-from tbacss.webexport import _analysis_window  # noqa: E402
+from tbacss import SummitDB
+from tbacss.analysis import P_0, shot_metrics
+from tbacss.analysis import TIME_START_S
+from tbacss.webexport import _analysis_window
 
 
 def _window_offset(dt: float) -> int:

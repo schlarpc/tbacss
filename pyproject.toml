@@ -1,32 +1,71 @@
-[build-system]
-requires = ["setuptools>=77"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "tbacss"
 version = "0.1.0"
 description = "Parse TBAC Silencer Summit release sets into SQLite"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.11"
-dependencies = ["numpy>=1.24"]
+authors = [ { name = "Chaz Schlarp" } ]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+]
 
 [project.optional-dependencies]
-analysis = ["scipy>=1.10"]     # python -m tbacss verify
-export = ["pandas>=2.0"]       # python -m tbacss export
-dev = ["pytest>=7"]
+# python -m tbacss export, and SummitDB.dataframe
+export = [
+    "pandas>=2.0",
+    "pyarrow>=15",
+]
 
 [project.scripts]
 tbacss = "tbacss.__main__:main"
 
-[tool.setuptools]
-packages = ["tbacss"]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.setuptools.package-data]
-tbacss = ["schema.sql"]
+[dependency-groups]
+dev = [
+    "cruft[pyproject]>=2.16.0",
+    "mypy>=2.0.0",
+    "myst-parser>=4.0.1",
+    "pandas-stubs>=2.0",
+    "pytest>=9.0.3",
+    "pytest-cov>=6.2.1",
+    "ruff>=0.15.12",
+    "scipy-stubs>=1.10",
+    "sphinx>=8.2.3",
+    "sphinx-autoapi>=3.8.0",
+]
+
+[tool.coverage]
+html.directory = "docs/generated/coverage"
+report.show_missing = true
+run.source_pkgs = [ "tbacss" ]
+run.branch = true
+xml.output = "docs/generated/coverage/coverage.xml"
+
+[tool.cruft]
+skip = [ ".git", "tests" ]
+
+[tool.mypy]
+check_untyped_defs = true
+files = [ "src", "tests", "scripts" ]
+ignore_missing_imports = true
+no_implicit_optional = true
+pretty = true
+show_error_codes = true
+warn_return_any = true
+warn_unused_ignores = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-# This environment ships a pytest-black build that is incompatible with the
-# installed pluggy; it has nothing to do with these tests.
-addopts = "-p no:black"
+addopts = "--cov --cov-report html --cov-report xml"
+testpaths = [ "tests" ]
+
+[tool.ruff]
+line-length = 99
+src = [ "src", "tests" ]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true

@@ -11,14 +11,26 @@ web/fixture/
 # TBAC's own material, fetched rather than vendored: the report pages are
 # their copyrighted document rather than the data they grant use of, and
 # reference/ is their Octave, which carries an ALL RIGHTS RESERVED header.
-# Neither is needed to build -- tbacss/analysis.py is an independent port --
+# Neither is needed to build -- src/tbacss/analysis.py is an independent port --
 # and scripts/fetch_sources.sh puts both back. The all.csv tables next to the
 # reports are data and are tracked.
 summit*/index.html
 reference/
 
+/.direnv/
+/.hypothesis
+/.pytest_cache/
+/.mypy_cache/
+/.ruff_cache/
+/.pre-commit-config.yaml
+*.pyc
 __pycache__/
-*.py[cod]
-.pytest_cache/
-.venv/
-*.egg-info/
+.coverage
+/.claude
+/.venv/
+
+# Nix build output
+/result
+
+# Sphinx build output
+/docs/generated/
