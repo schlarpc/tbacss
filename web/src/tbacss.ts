@@ -36,6 +36,8 @@ export interface CatalogColumns extends Columns {
   host_ammo: Int32Array;
   /** TBAC's advisory summary per run; missing from bundles older than caveats.py. */
   caveat?: Int32Array;
+  /** Which suppressor, as a key into `cans`; missing from bundles older than names.py. */
+  can?: Int32Array;
 
   year: Float64Array;
   is_baseline: Float64Array;
@@ -84,6 +86,12 @@ export interface Host {
   grains: number | null;
 }
 
+/** One suppressor under its settled name; `tbacss.names.display_names`. */
+export interface Can {
+  maker: string;
+  model: string;
+}
+
 /** An advisory TBAC published in prose; `tbacss.caveats.Caveat`. */
 export interface Caveat {
   year: number;
@@ -105,6 +113,7 @@ export interface RawTable {
   hosts?: Record<string, Host>;
   caveats?: Caveat[];
   band_centres?: number[];
+  cans?: Record<string, Can>;
 }
 
 /** The minimum a filter or frontier needs: row count, columns, dictionaries. */
@@ -120,6 +129,7 @@ export interface Table<C extends Columns = Columns> extends ColumnarTable {
   datasets: Dataset[] | null;
   version: string | null;
   hosts: Record<string, Host | undefined>;
+  cans: Record<string, Can | undefined>;
   row(i: number): Record<string, string | number | null>;
 }
 
@@ -231,6 +241,7 @@ async function loadTable<C extends Columns>(url: string, init?: RequestInit): Pr
     // Host code -> {label, description}, transcribed from each year's report;
     // the codes are not explained anywhere in all.csv.
     hosts: raw.hosts ?? {},
+    cans: raw.cans ?? {},
     /** Row as a plain object, for display. */
     row(i) {
       const out: Record<string, string | number | null> = {};

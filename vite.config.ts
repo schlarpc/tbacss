@@ -1,3 +1,4 @@
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vite';
 
 // The page is served from a GitHub Pages project subpath, and it fetches the
@@ -7,6 +8,7 @@ import { defineConfig } from 'vite';
 // root like any other file.
 export default defineConfig({
   root: 'web',
+  plugins: [svelte()],
   base: './',
   publicDir: false,
   build: {
