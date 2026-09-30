@@ -30,7 +30,7 @@ jobs:
             echo "::notice::web/data-release.json is not committed yet; skipping the deploy"
           fi
       - if: steps.pin.outputs.pinned
-        uses: DeterminateSystems/nix-installer-action@v22
+        uses: DeterminateSystems/nix-installer-action@v23
       - if: steps.pin.outputs.pinned
         uses: DeterminateSystems/magic-nix-cache-action@v13
       # The viewer, plus the data bundle fetched from the release that
