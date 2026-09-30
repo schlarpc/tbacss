@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { WaveformEntry } from '../tbacss.ts';
   import { clipOf, play } from '../lib/audio.ts';
-  import { stretchClip } from '../lib/stretcher.ts';
   import { app } from '../lib/state.svelte.ts';
   import { fullRate, recordSpan } from '../lib/wave.ts';
   import Icon from './Icon.svelte';
@@ -42,15 +41,7 @@
           app.playing = playing;
           if (!playing) mine = false;
         },
-        {
-          rate: app.rate,
-          // Keeping the pitch means stretching each clip first; the worker
-          // does one ahead of playback, and caches it for a replay.
-          prepare:
-            app.keepPitch && app.rate < 1
-              ? (clip) => stretchClip(`${clip.id}:${clip.offsetMs.toFixed(3)}`, clip.values, clip.rate, 1 / app.rate)
-              : undefined,
-        },
+        { rate: app.rate },
       );
     } finally {
       loading = false;

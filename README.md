@@ -248,17 +248,6 @@ sample in five, since Web Audio only promises 8--96 kHz, and scales levels: a
 single shot to a fixed peak, a compared set by one shared factor so the quieter
 can still sounds quieter.
 
-Slowed playback (4x, 16x, 64x) either lets the pitch drop, like tape, or
-keeps it. Keeping it is `web/src/lib/stretch.ts`, run in a worker: phase
-gradient heap integration from Průša & Holighaus's "Phase Vocoder Done Right"
-(EUSIPCO 2017) with reassignment phase derivatives (Auger & Flandrin 1995),
-a harmonic-percussive-residual split (Fitzgerald 2010; Driedger, Müller & Disch
-2014), and transient events found as in Röbel (DAFx-03). What persists -- the
-ringing, the decay -- is stretched; each attack is synthesised once, sharp, at
-alpha times its time. On a crack with a ring behind it, pre-echo at 16x drops
-from ~10% of the energy with plain PVDR to under 1%. `tests/web/stretch.test.ts`
-measures pitch, level, placement, pre-echo and noise energy.
-
 Direction is a property of each measure (`web/src/lib/measures.ts`) rather than
 a control. `year`, barrel and bullet weight are dimensions, not objectives, so
 putting one on an axis drops it from the frontier instead of pretending 2026

@@ -90,23 +90,17 @@ export interface Playing {
 
 /**
  * Play clips one after another, scaled by one shared factor, at `rate` of
- * real time.
+ * real time. Slowing a buffer down lowers its pitch with it: at a quarter
+ * speed a crack becomes a thud two octaves down, which is the price of hearing
+ * the shape of 125 ms of sound.
  *
- * Two ways to slow down. Played slower, a buffer's pitch drops with it -- at
- * a quarter speed a crack becomes a thud two octaves down -- but every feature
- * of the waveform survives one-to-one, like tape. Or `prepare` stretches each
- * clip first at its original pitch (see stretch.ts) and it plays at normal
- * speed. Clips are prepared one ahead of playback, so a string starts as soon
- * as its first shot is ready.
- *
- * The shared gain comes from the clips as recorded, so relative levels match
- * in both modes. `onClip` is called as each clip starts and with null at the
- * end, so a plot can draw a playhead. Starting new playback stops the old.
+ * `onClip` is called as each clip starts and with null at the end, so a plot
+ * can draw a playhead. Starting new playback stops the old.
  */
 export function play(
   clips: Clip[],
   onClip: (playing: Playing | null) => void,
-  { gap = 0.8, rate = 1, prepare }: { gap?: number; rate?: number; prepare?: (clip: Clip) => Promise<Float32Array> } = {},
+  { gap = 0.8, rate = 1 }: { gap?: number; rate?: number } = {},
 ): { stop(): void } {
   current?.stop();
   context ??= new AudioContext();
@@ -114,13 +108,34 @@ export function play(
   void ctx.resume();
 
   const loudest = Math.max(...clips.map((c) => peakOf(c.values))) || 1;
+  const gain = HEADROOM / loudest;
   const sources: AudioBufferSourceNode[] = [];
   const timers: ReturnType<typeof setTimeout>[] = [];
-  let stopped = false;
-  let end: ReturnType<typeof setTimeout> | undefined;
+  let when = ctx.currentTime + 0.05;
+
+  clips.forEach((clip, n) => {
+    const buffer = ctx.createBuffer(1, clip.values.length, clip.rate);
+    const channel = buffer.getChannelData(0);
+    const fade = Math.round(FADE_S * clip.rate);
+    for (let i = 0; i < clip.values.length; i++) {
+      const edge = Math.min(1, i / fade, (clip.values.length - 1 - i) / fade);
+      channel[i] = clip.values[i] * gain * edge;
+    }
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = rate;
+    source.connect(ctx.destination);
+    source.start(when);
+    sources.push(source);
+    const start = when;
+    const duration = buffer.duration / rate;
+    const playing = { id: clip.id, start, duration, rate, offsetMs: clip.offsetMs, index: n, count: clips.length };
+    timers.push(setTimeout(() => onClip(playing), (start - ctx.currentTime) * 1000));
+    when += duration + (n < clips.length - 1 ? gap : 0);
+  });
+  const end = setTimeout(() => finish(), (when - ctx.currentTime) * 1000 + 30);
 
   const finish = () => {
-    stopped = true;
     timers.forEach(clearTimeout);
     clearTimeout(end);
     if (current === handle) current = null;
@@ -135,44 +150,10 @@ export function play(
           // already finished
         }
       }
-      if (!stopped) finish();
+      finish();
     },
   };
   current = handle;
-
-  void (async () => {
-    // A stretched clip can peak a little above its original, where coherent
-    // frames overlap on an attack; keep the shared gain clear of clipping.
-    const prepared = clips.map((clip) => (prepare ? prepare(clip) : Promise.resolve(clip.values)));
-    let when = 0;
-    for (const [n, clip] of clips.entries()) {
-      const values = await prepared[n];
-      if (stopped) return;
-      const gain = Math.min(HEADROOM / loudest, 0.95 / (peakOf(values) || 1));
-      const buffer = ctx.createBuffer(1, values.length, clip.rate);
-      const channel = buffer.getChannelData(0);
-      const fade = Math.round(FADE_S * clip.rate);
-      for (let i = 0; i < values.length; i++) {
-        const edge = Math.min(1, i / fade, (values.length - 1 - i) / fade);
-        channel[i] = values[i] * gain * edge;
-      }
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.playbackRate.value = prepare ? 1 : rate;
-      source.connect(ctx.destination);
-      when = Math.max(when, ctx.currentTime + 0.05);
-      source.start(when);
-      sources.push(source);
-      const start = when;
-      const duration = buffer.duration / source.playbackRate.value;
-      const playing = { id: clip.id, start, duration, rate, offsetMs: clip.offsetMs, index: n, count: clips.length };
-      timers.push(setTimeout(() => onClip(playing), (start - ctx.currentTime) * 1000));
-      when += duration + gap;
-    }
-    end = setTimeout(() => {
-      if (!stopped) finish();
-    }, (when - gap - ctx.currentTime) * 1000 + 30);
-  })();
   return handle;
 }
 
