@@ -30,9 +30,9 @@ jobs:
             echo "::notice::web/data-release.json is not committed yet; skipping the deploy"
           fi
       - if: steps.pin.outputs.pinned
-        uses: DeterminateSystems/nix-installer-action@v22
+        uses: DeterminateSystems/nix-installer-action@v23
       - if: steps.pin.outputs.pinned
-        uses: DeterminateSystems/magic-nix-cache-action@v13
+        uses: DeterminateSystems/magic-nix-cache-action@v15
       # The viewer, plus the data bundle fetched from the release that
       # web/data-release.json pins by hash.
       - if: steps.pin.outputs.pinned
@@ -42,7 +42,7 @@ jobs:
       - if: steps.pin.outputs.pinned
         run: cp -rL result _site && chmod -R u+w _site
       - if: steps.pin.outputs.pinned
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
@@ -55,4 +55,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
