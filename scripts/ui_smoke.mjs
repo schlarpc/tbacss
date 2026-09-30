@@ -134,6 +134,12 @@ await evaluate("document.querySelector('.clear')?.click()");
 await wait(400);
 check('clear restores the field', (await text('.more .dim')) === total && before > 0);
 
+// 3b. A year carried to a host that was never tested that year drops out
+// instead of emptying the page (.300 BLK bolt starts in 2025).
+await go('#host=.300BO-16BA&years=2024');
+check('a year the host lacks does not empty it', (await count('.ranked ol li')) >= 10);
+await go('#host=.308-20BA');
+
 // 4. Picking a run writes it up and loads its traces.
 await tap('.ranked ol li:nth-child(2) button');
 await wait(1500);
@@ -151,8 +157,21 @@ const drawn = await evaluate(`(() => {
 check('the waveform draws', drawn > 1000, `${drawn} px`);
 check('the spectrum draws', (await count('article figure svg path')) >= 1);
 
-// 5. Listen plays. A shot is ~125 ms of sound, over before any poll would
-// catch it, so watch for the button ever reporting that it is playing.
+// 4b. Switching mic keeps the reader where they are on the page.
+if (!narrow) {
+  await evaluate('window.scrollTo(0, document.documentElement.scrollHeight)');
+  await wait(200);
+  const scrolled = await evaluate('window.scrollY');
+  await evaluate("[...document.querySelectorAll('article .mics .pill')].find((b) => b.textContent.trim() === 'ML')?.click()");
+  await wait(500);
+  const after = await evaluate('window.scrollY');
+  check('switching mic does not scroll to the top', scrolled > 50 && after > 50, `${scrolled} → ${after}`);
+  await evaluate("[...document.querySelectorAll('article .mics .pill')].find((b) => b.textContent.trim() === 'SE')?.click()");
+}
+
+// 5. Listen plays the string. At real time a shot is ~125 ms of sound, over
+// before any poll would catch it, so watch for the button ever playing, and
+// slow it down to catch the playhead partway through the string.
 await evaluate(`(() => {
   const button = document.querySelector('article .actions .btn.solid');
   window.__played = false;
@@ -163,6 +182,24 @@ await evaluate(`(() => {
 await tap('article .actions .btn.solid');
 await wait(2500);
 check('Listen plays the shot', await evaluate('window.__played'));
+await evaluate(`(() => {
+  const speed = document.querySelector('.speed select');
+  speed.value = String(1 / 16);
+  speed.dispatchEvent(new Event('change', { bubbles: true }));
+})()`);
+// Let the real-time string finish before starting the slowed one.
+for (let k = 0; k < 40; k++) {
+  if ((await text('article .actions .btn.solid')) !== 'Stop') break;
+  await wait(250);
+}
+await tap('article .actions .btn.solid');
+let caption = '';
+for (let k = 0; k < 16 && !/Playing shot \d · [2-9] of [2-9]/.test(caption); k++) {
+  await wait(250);
+  caption = await text('article figcaption');
+}
+check('slowed playback steps through the string', /Playing shot \d · [2-9] of [2-9]/.test(caption) && caption.includes('16× slower'), caption);
+await tap('article .actions .btn.solid');
 
 // 6. Compare: two runs from the list, the tray, the page.
 await tap('article .actions .btn:not(.solid)');

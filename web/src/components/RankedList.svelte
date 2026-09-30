@@ -100,8 +100,14 @@
       {tied} other {tied === 1 ? 'can' : 'cans'} here {tied === 1 ? 'is' : 'are'} within measurement error of No. 1 — the order at the top is mostly noise.<Info term="tie" />
     </p>
   {/if}
+  {#if !app.ranked.length}
+    <p class="empty">
+      No runs on this host match these filters.
+      {#if app.filterCount}<button type="button" class="linkish" onclick={() => app.resetFilters()}>Clear filters</button>{/if}
+    </p>
+  {/if}
   <div class="more">
-    <span class="dim">1–{rows.length} of {app.ranked.length.toLocaleString()}</span>
+    <span class="dim">{app.ranked.length ? `1–${rows.length} of ${app.ranked.length.toLocaleString()}` : ''}</span>
     {#if shown < app.ranked.length}
       <button type="button" class="linkish" onclick={() => (shown += 25)}>Show 25 more</button>
     {/if}
@@ -222,6 +228,11 @@
     white-space: nowrap;
     transform: rotate(-90deg) translateX(-50%);
     transform-origin: left top;
+  }
+  .empty {
+    padding: 24px 0;
+    font-family: var(--serif);
+    font-size: 18px;
   }
   .more {
     display: flex;

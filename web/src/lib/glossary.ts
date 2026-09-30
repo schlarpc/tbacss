@@ -60,6 +60,6 @@ export const GLOSSARY: Record<string, Term> = {
   },
   years: {
     term: 'Mixed years',
-    text: 'The test setup differs between Summits; the same can has measured up to 5 dB apart.',
+    text: 'The test setup differs between Summits: cans tested in more than one year have measured up to 5 dB apart.',
   },
 };

@@ -122,7 +122,7 @@
     cursor: pointer;
   }
   .rule {
-    padding-bottom: 6px;
+    padding-bottom: 8px;
     border-bottom: 2px solid var(--ink);
   }
   .split {
@@ -200,16 +200,17 @@
     gap: 36px;
   }
   ul {
-    margin: 0;
+    margin: 6px 0 0;
     padding: 0;
     list-style: none;
   }
   .row {
     display: flex;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
     width: 100%;
-    height: 28px;
+    height: 32px;
     padding: 0 2px;
     border: none;
     border-bottom: 1px solid var(--rule);

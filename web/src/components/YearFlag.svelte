@@ -20,7 +20,7 @@
         {@render children()}
       {:else}
         <b>{years.length === 2 ? 'Two' : years.length === 3 ? 'Three' : years.length} years mixed.</b>
-        The test setup differs between Summits — the same can has measured up to 5 dB apart.
+        The test setup differs between Summits: cans tested in more than one year have measured up to 5 dB apart.
       {/if}
       {#if action}<button type="button" class="linkish" onclick={onaction}>{action}</button>{/if}
     </span>

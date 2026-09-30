@@ -7,6 +7,7 @@
   import Icon from './Icon.svelte';
   import Info from './Info.svelte';
   import ListenButton from './ListenButton.svelte';
+  import SpeedSelect from './SpeedSelect.svelte';
   import Masthead from './Masthead.svelte';
   import SpectrumFigure from './SpectrumFigure.svelte';
   import YearFlag from './YearFlag.svelte';
@@ -68,7 +69,7 @@
       {/if}
       {#if years.length > 1}
         <YearFlag {years}>
-          <b>Tested in {years.join(' and ')}.</b> The test setup differs between Summits, and the same can has measured up to 5 dB apart — read gaps of a few dB with that in mind.
+          <b>Tested in {years.join(' and ')}.</b> The test setup differs between Summits: cans tested in more than one year have measured up to 5 dB apart, so read gaps of a few dB with that in mind.
         </YearFlag>
       {/if}
     </div>
@@ -117,6 +118,7 @@
       <div class="figures">
         <div class="player">
           <ListenButton shots={shots.map((s) => s.entry)} label="Play in turn" />
+          <SpeedSelect />
           <span class="serif order">
             {#each runs as i, n (i)}{#if n}<span class="dim">{' → '}</span>{/if}<span style:color={`var(${tone(i)})`}>{nameOf(cat, i).model}</span>{/each}
           </span>

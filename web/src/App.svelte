@@ -10,9 +10,11 @@
 
   app.load();
 
-  // A new page starts at its top.
+  // A new page starts at its top. Keyed on a derived string, so a change
+  // within the page -- a filter, a mic, a shot -- does not count as one.
+  const pageKey = $derived(`${app.route.page}/${app.route.can ?? ''}`);
   $effect(() => {
-    void [app.route.page, app.route.can];
+    void pageKey;
     window.scrollTo({ top: 0 });
   });
 </script>

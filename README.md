@@ -230,7 +230,7 @@ its waveform and spectrum and a **Listen** button; up to four runs compare
 side by side, their first shots overlaid and played in turn; and every
 suppressor has a page showing where it ranked on each host it was tested on.
 A view that mixes Summit years says so, because the test setup differs
-between them and the same can has measured up to 5 dB apart.
+between them: cans tested in more than one year have measured up to 5 dB apart.
 
 The whole state is in the URL hash (`#host=5.56-16AR&view=trade&run=1853`,
 `#page=compare&cmp=1853,1810`, `#can=otter-creek-labs/hydrogenl`), so every

@@ -7,6 +7,7 @@
   import Icon from './Icon.svelte';
   import Info from './Info.svelte';
   import ListenButton from './ListenButton.svelte';
+  import SpeedSelect from './SpeedSelect.svelte';
   import SpectrumFigure from './SpectrumFigure.svelte';
   import WaveFigure from './WaveFigure.svelte';
 
@@ -37,8 +38,10 @@
   const shot = $derived<WaveformEntry | null>(
     app.route.shot !== null ? (shots.find((s) => s.id === app.route.shot) ?? null) : null,
   );
-  // Listen plays the shot on screen, or the first real one of the mic.
-  const listenTo = $derived(shot ? [shot] : shots.filter((s) => !s.excluded).slice(0, 1));
+  // Listen plays the string -- the scored shots in order, from the one on
+  // screen (or the first) to the last -- so first-round pop is audible.
+  const string = $derived(shots.filter((s) => !s.excluded));
+  const listenTo = $derived(shot && !shot.excluded ? string.filter((s) => s.shot >= shot.shot) : shot ? [shot] : string);
 
   const se = $derived(num(cat, 'se_peak_dba', index));
   const reduction = $derived(num(cat, 'se_reduction_dba', index));
@@ -54,7 +57,8 @@
       <h2>{name.model}</h2>
     </div>
     <div class="actions">
-      <ListenButton shots={listenTo} />
+      <ListenButton shots={listenTo} label={listenTo.length > 1 ? `Listen · ${listenTo.length} shots` : 'Listen'} />
+      <SpeedSelect />
       <button type="button" class="btn" aria-pressed={app.isCompared(index)} onclick={() => app.toggleCompare(index)} disabled={!app.isCompared(index) && app.route.compare.length >= 4}>
         <Icon name={app.isCompared(index) ? 'check' : 'plus'} />{app.isCompared(index) ? 'Comparing' : 'Compare'}
       </button>
@@ -119,11 +123,13 @@
   }
   header {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     gap: 10px;
   }
+  /* The controls wrap under the name before the name gets squeezed. */
   .title {
-    flex: 1;
+    flex: 1 1 240px;
     min-width: 0;
   }
   h2 {

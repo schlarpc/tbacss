@@ -40,7 +40,7 @@
     min-width: 0;
   }
   h1 {
-    margin-top: 6px;
+    margin-top: 12px;
     font-size: 46px;
     line-height: 1.02;
     letter-spacing: -0.02em;
@@ -66,11 +66,13 @@
   .home:hover {
     color: var(--ink);
   }
+  /* Pinned to the top row: a headline that wraps grows downward without
+     dragging search and the theme switch along with it. */
   .tools {
     display: flex;
+    align-self: flex-start;
     align-items: center;
     gap: 12px;
-    padding-bottom: 4px;
   }
   @media (max-width: 760px) {
     header {

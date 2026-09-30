@@ -59,10 +59,17 @@ export interface Clip {
   rate: number;
   /** Anything to tag the clip with; handed back while it plays. */
   id: number;
+  /** Where the clip starts on the record's own time axis, ms. */
+  offsetMs: number;
 }
 
-export function clipOf(samples: ArrayLike<number>, dt: number, id: number): Clip {
-  return { values: downsample(samples), rate: 1 / dt / DECIMATE, id };
+/**
+ * A clip of `samples` from index `start`, placed at `t0Ms` + start on the
+ * record's time axis so a plot can follow it.
+ */
+export function clipOf(samples: Float32Array, dt: number, id: number, start = 0, t0Ms = 0): Clip {
+  const from = Math.max(0, Math.min(start, samples.length - 1));
+  return { values: downsample(samples.subarray(from)), rate: 1 / dt / DECIMATE, id, offsetMs: t0Ms + from * dt * 1000 };
 }
 
 let context: AudioContext | null = null;
@@ -73,15 +80,28 @@ export interface Playing {
   /** AudioContext time the clip started, and how long it lasts, in seconds. */
   start: number;
   duration: number;
+  /** Playback speed, and where the clip sits on the record's time axis. */
+  rate: number;
+  offsetMs: number;
+  /** Which clip of how many: "shot 2 of 5". */
+  index: number;
+  count: number;
 }
 
 /**
- * Play clips one after another, scaled by one shared factor.
+ * Play clips one after another, scaled by one shared factor, at `rate` of
+ * real time. Slowing a buffer down lowers its pitch with it: at a quarter
+ * speed a crack becomes a thud two octaves down, which is the price of hearing
+ * the shape of 125 ms of sound.
  *
  * `onClip` is called as each clip starts and with null at the end, so a plot
  * can draw a playhead. Starting new playback stops the old.
  */
-export function play(clips: Clip[], onClip: (playing: Playing | null) => void, gap = 0.6): { stop(): void } {
+export function play(
+  clips: Clip[],
+  onClip: (playing: Playing | null) => void,
+  { gap = 0.8, rate = 1 }: { gap?: number; rate?: number } = {},
+): { stop(): void } {
   current?.stop();
   context ??= new AudioContext();
   const ctx = context;
@@ -103,12 +123,15 @@ export function play(clips: Clip[], onClip: (playing: Playing | null) => void, g
     }
     const source = ctx.createBufferSource();
     source.buffer = buffer;
+    source.playbackRate.value = rate;
     source.connect(ctx.destination);
     source.start(when);
     sources.push(source);
     const start = when;
-    timers.push(setTimeout(() => onClip({ id: clip.id, start, duration: buffer.duration }), (start - ctx.currentTime) * 1000));
-    when += buffer.duration + (n < clips.length - 1 ? gap : 0);
+    const duration = buffer.duration / rate;
+    const playing = { id: clip.id, start, duration, rate, offsetMs: clip.offsetMs, index: n, count: clips.length };
+    timers.push(setTimeout(() => onClip(playing), (start - ctx.currentTime) * 1000));
+    when += duration + (n < clips.length - 1 ? gap : 0);
   });
   const end = setTimeout(() => finish(), (when - ctx.currentTime) * 1000 + 30);
 
@@ -136,3 +159,19 @@ export function play(clips: Clip[], onClip: (playing: Playing | null) => void, g
 
 /** Seconds into the current clip, for a playhead. */
 export const elapsed = (playing: Playing) => (context ? context.currentTime - playing.start : 0);
+
+/** Where the playhead is on the record's own time axis, ms. */
+export const position = (playing: Playing) =>
+  playing.offsetMs + Math.max(0, Math.min(elapsed(playing), playing.duration)) * playing.rate * 1000;
+
+/**
+ * The blast itself is ~20 ms, so it takes a steep slowdown to watch a
+ * playhead cross it: at 64× it is about a second and a half, and six octaves
+ * down.
+ */
+export const SPEEDS = [
+  { rate: 1, label: 'Real time' },
+  { rate: 1 / 4, label: '4× slower' },
+  { rate: 1 / 16, label: '16× slower' },
+  { rate: 1 / 64, label: '64× slower' },
+];

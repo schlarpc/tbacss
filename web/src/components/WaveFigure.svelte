@@ -1,7 +1,7 @@
 <script lang="ts">
   import { toDb } from '../tbacss.ts';
   import type { Envelope, WaveformEntry } from '../tbacss.ts';
-  import { elapsed } from '../lib/audio.ts';
+  import { position } from '../lib/audio.ts';
   import {
     axes,
     bandExtent,
@@ -36,6 +36,8 @@
   let canvas: HTMLCanvasElement;
   let records = $state.raw<Envelope[] | null>(null);
   let record = $state.raw<FullRate | null>(null);
+  /** The shot Listen is playing, when it is this run's: drawn in place of the pick. */
+  let heard = $state.raw<FullRate | null>(null);
   let failed = $state<string | null>(null);
   let view = $state<Domain | null>(null);
   let auto = $state<Domain | null>(null);
@@ -86,6 +88,18 @@
     });
   });
 
+  $effect(() => {
+    const id = app.playing?.id;
+    const entry = id === undefined ? null : group.find((r) => r.entry.id === id)?.entry;
+    if (!entry) {
+      heard = null;
+      return;
+    }
+    fullRate(bundle, entry).then((found) => {
+      if (app.playing?.id === entry.id) heard = found;
+    });
+  });
+
   function draw() {
     if (!canvas) return;
     const { ctx, width } = prepare(canvas, height);
@@ -106,9 +120,10 @@
       cols,
     );
     let trace: ColumnBand | null = null;
-    if (record) {
-      const [s0, s1] = recordSpan(bundle, record.entry);
-      const values = record.values;
+    const shown = heard ?? record;
+    if (shown) {
+      const [s0, s1] = recordSpan(bundle, shown.entry);
+      const values = shown.values;
       trace = decimate(values.length, s0, s1, (i) => values[i], (i) => values[i], domain, cols);
     }
     // Scale to what is on screen, or the zoom does nothing: the peak is twenty
@@ -141,9 +156,9 @@
     // Playhead while Listen is playing this run's clip.
     const playing = app.playing;
     const clip = playing && group.find((r) => r.entry.id === playing.id);
-    if (playing && clip) {
-      const t = recordSpan(bundle, clip.entry)[0] + elapsed(playing) * 1000;
-      const x = px(t);
+    const at = playing && clip ? px(position(playing)) : NaN;
+    if (playing && clip && at >= inner.left && at <= inner.right) {
+      const x = at;
       ctx.fillStyle = color('--ink');
       ctx.globalAlpha = 0.05;
       ctx.fillRect(inner.left, inner.top, Math.max(0, x - inner.left), inner.bottom - inner.top);
@@ -170,7 +185,7 @@
 
   // Repaint on any change the drawing reads.
   $effect(() => {
-    void [records, record, domain, hover, mic, height, failed];
+    void [records, record, heard, domain, hover, mic, height, failed];
     draw();
   });
 
@@ -310,7 +325,7 @@
   </div>
   <figcaption>
     <span class="dim">
-      {#if readout}{readout}{:else}{figure} — {shot ? `shot ${shot.shot}` : `all ${shots.length} shots`} at {mic === 'SE' ? "the shooter's ear" : mic}, Pa{#if record} · peak {record.analysis.peak_db.toFixed(1)} dB{/if}{/if}
+      {#if heard && app.playing}Playing shot {heard.entry.shot} · {app.playing.index + 1} of {app.playing.count}{#if app.playing.rate !== 1}{` · ${Math.round(1 / app.playing.rate)}× slower`}{/if}{:else if readout}{readout}{:else}{figure} — {shot ? `shot ${shot.shot}` : `all ${shots.length} shots`} at {mic === 'SE' ? "the shooter's ear" : mic}, Pa{#if record} · peak {record.analysis.peak_db.toFixed(1)} dB{/if}{/if}
     </span>
     <span class="controls">
       {#if view}<button type="button" class="linkish" onclick={() => setView(null)}>Reset zoom</button>{/if}

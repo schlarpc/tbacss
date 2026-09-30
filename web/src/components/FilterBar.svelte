@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { NO_FILTERS, extentOf, nameOf, text, visibleRows, yearsIn } from '../lib/explore.ts';
+  import { extentOf, nameOf, text } from '../lib/explore.ts';
   import { app } from '../lib/state.svelte.ts';
   import ChipCombo from './ChipCombo.svelte';
   import Menu from './Menu.svelte';
@@ -12,8 +12,8 @@
   let { trailing }: { trailing?: Snippet } = $props();
   let open = $state(false);
 
-  const field = $derived(app.cat ? visibleRows(app.cat, { ...NO_FILTERS, host: app.host }) : []);
-  const years = $derived(app.cat ? yearsIn(app.cat, field) : []);
+  const field = $derived(app.field);
+  const years = $derived(app.hostYears);
 
   function counts(read: (i: number) => string | null) {
     const out = new Map<string, number>();
@@ -38,11 +38,11 @@
 
   /** All years pressed means no year filter; unpressing one keeps the rest. */
   function toggleYear(year: number) {
-    const current = app.route.years.length ? app.route.years : years;
+    const current = app.activeYears.length ? app.activeYears : years;
     const next = current.includes(year) ? current.filter((y) => y !== year) : [...current, year].sort();
     app.go({ years: next.length === years.length || !next.length ? [] : next });
   }
-  const yearOn = (year: number) => !app.route.years.length || app.route.years.includes(year);
+  const yearOn = (year: number) => !app.activeYears.length || app.activeYears.includes(year);
 
   function toggleCaliber(value: string) {
     const current = app.route.calibers;

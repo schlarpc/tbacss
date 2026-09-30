@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { WaveformEntry } from '../tbacss.ts';
-  import { elapsed } from '../lib/audio.ts';
+  import { position } from '../lib/audio.ts';
   import { axes, color, decimate, observeWidth, placeholder, prepare, strokeColumns } from '../lib/plot.ts';
   import type { Domain } from '../lib/plot.ts';
   import { app } from '../lib/state.svelte.ts';
@@ -63,7 +63,7 @@
     const playing = app.playing;
     const r = playing && ready.find((x) => x.entry.id === playing.id);
     if (playing && r) {
-      const x = px(recordSpan(app.bundle!, r.entry)[0] + elapsed(playing) * 1000 - startOf(r));
+      const x = px(position(playing) - startOf(r));
       ctx.strokeStyle = color('--ink');
       ctx.lineWidth = 1.5;
       ctx.beginPath();

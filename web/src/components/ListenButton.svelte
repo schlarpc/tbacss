@@ -2,12 +2,13 @@
   import type { WaveformEntry } from '../tbacss.ts';
   import { clipOf, play } from '../lib/audio.ts';
   import { app } from '../lib/state.svelte.ts';
-  import { fullRate } from '../lib/wave.ts';
+  import { fullRate, recordSpan } from '../lib/wave.ts';
   import Icon from './Icon.svelte';
 
-  // Play one shot, or several in turn. The shots are fetched at full rate
-  // (shared with the plots) and played through Web Audio; see lib/audio.ts for
-  // the downsampling and why levels are scaled.
+  // Play shots one after another -- a run's string, or one shot from each of
+  // several cans -- at the chosen speed, with one shared level so a louder
+  // shot stays louder. Each clip starts just before its shot rather than
+  // carrying the ~48 ms of pre-trigger silence in the capture.
   let { shots, label = 'Listen', solid = true, small = false }: {
     shots: WaveformEntry[];
     label?: string;
@@ -15,9 +16,10 @@
     small?: boolean;
   } = $props();
 
+  const LEAD_MS = 3;
   let loading = $state(false);
   let handle: { stop(): void } | null = null;
-  const mine = $derived(app.playing !== null && shots.some((s) => s.id === app.playing?.id));
+  let mine = $state(false);
 
   async function toggle() {
     if (mine) {
@@ -27,9 +29,19 @@
     loading = true;
     try {
       const records = await Promise.all(shots.map((s) => fullRate(app.bundle!, s)));
+      const clips = records.map((r) => {
+        const trigger = r.analysis.triggered ? r.analysis.leqStart : 0;
+        const start = Math.max(0, trigger - Math.round(LEAD_MS / (r.dt * 1000)));
+        return clipOf(r.values, r.dt, r.entry.id, start, recordSpan(app.bundle!, r.entry)[0]);
+      });
+      mine = true;
       handle = play(
-        records.map((r) => clipOf(r.values, r.dt, r.entry.id)),
-        (playing) => (app.playing = playing),
+        clips,
+        (playing) => {
+          app.playing = playing;
+          if (!playing) mine = false;
+        },
+        { rate: app.rate },
       );
     } finally {
       loading = false;

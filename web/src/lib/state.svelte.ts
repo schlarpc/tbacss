@@ -24,6 +24,15 @@ import type { Playing } from './audio.ts';
 export const DEFAULT_HOST = '5.56-16AR';
 export const MAX_COMPARE = 4;
 
+function storedRate(): number {
+  try {
+    const value = Number(localStorage.getItem('tbacss-rate'));
+    return [1, 1 / 4, 1 / 16, 1 / 64].includes(value) ? value : 1;
+  } catch {
+    return 1;
+  }
+}
+
 class AppState {
   bundle = $state.raw<Bundle | null>(null);
   error = $state<string | null>(null);
@@ -32,6 +41,8 @@ class AppState {
   glossaryOpen = $state(false);
   /** The clip Listen is playing, for a playhead. */
   playing = $state<Playing | null>(null);
+  /** Playback speed: 1 is real time; slower also lowers the pitch. */
+  rate = $state(storedRate());
 
   cat = $derived(this.bundle?.catalog ?? null);
 
@@ -55,10 +66,20 @@ class AppState {
     return this.cat?.hosts[DEFAULT_HOST] ? DEFAULT_HOST : null;
   });
 
+  /** Every run on the host in view, before any other filter. */
+  field = $derived(this.cat ? visibleRows(this.cat, { ...NO_FILTERS, host: this.host }) : []);
+  hostYears = $derived(this.cat ? yearsIn(this.cat, this.field) : []);
+  /**
+   * The year filter as it applies to this host. A year the host was never
+   * tested in drops out rather than emptying the page -- a link or a host
+   * change can carry one over -- and none left means every year.
+   */
+  activeYears = $derived(this.route.years.filter((y) => this.hostYears.includes(y)));
+
   filters = $derived<Filters>({
     ...NO_FILTERS,
     host: this.host,
-    years: this.route.years,
+    years: this.activeYears,
     calibers: this.route.calibers,
     makers: this.route.makers,
     weight: this.route.weight,
@@ -67,7 +88,7 @@ class AppState {
 
   /** Filters beyond the host, for the phone's "Filters · n" badge. */
   filterCount = $derived(
-    this.route.years.length +
+    this.activeYears.length +
       this.route.calibers.length +
       this.route.makers.length +
       (this.route.weight ? 1 : 0) +
@@ -142,6 +163,15 @@ class AppState {
     return n >= 0 ? COMPARE_COLOURS[1 + (n % 4)] : null;
   };
 
+  setRate(rate: number) {
+    this.rate = rate;
+    try {
+      localStorage.setItem('tbacss-rate', String(rate));
+    } catch {
+      // private mode: the choice holds for this visit
+    }
+  }
+
   isCompared = (i: number) => this.cat !== null && this.route.compare.includes(this.cat.ids[i]);
 
   toggleCompare(i: number) {
@@ -166,10 +196,21 @@ class AppState {
 
   pickHost(code: string | null) {
     this.hostPickerOpen = false;
-    // A new host is a new field: the selected run and host-specific filters
-    // belong to the old one.
+    // A new host is a new field: the selected run and the filters -- years,
+    // makers, size ranges -- were chosen against the old one.
     this.go(
-      { page: 'explore', can: null, host: code ?? 'all', run: null, shot: null, calibers: [] },
+      {
+        page: 'explore',
+        can: null,
+        host: code ?? 'all',
+        run: null,
+        shot: null,
+        years: [],
+        calibers: [],
+        makers: [],
+        weight: null,
+        length: null,
+      },
       { push: true },
     );
   }
