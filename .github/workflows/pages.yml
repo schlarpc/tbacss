@@ -32,7 +32,7 @@ jobs:
       - if: steps.pin.outputs.pinned
         uses: DeterminateSystems/nix-installer-action@v22
       - if: steps.pin.outputs.pinned
-        uses: DeterminateSystems/magic-nix-cache-action@v13
+        uses: DeterminateSystems/magic-nix-cache-action@v15
       # The viewer, plus the data bundle fetched from the release that
       # web/data-release.json pins by hash.
       - if: steps.pin.outputs.pinned
