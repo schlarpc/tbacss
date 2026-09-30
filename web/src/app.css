@@ -1,0 +1,282 @@
+/*
+ * Range report: warm paper, a serif display face over a plain sans, oxblood
+ * for the run you are looking at, ink blue and ochre for the ones you compare
+ * it with, and olive for the frontier. Every colour is a token so the canvases
+ * can read them at paint time, and night paper is the same tokens redefined.
+ */
+
+@import '@fontsource-variable/newsreader/opsz.css';
+@import '@fontsource-variable/newsreader/opsz-italic.css';
+@import '@fontsource-variable/public-sans/wght.css';
+
+:root {
+  color-scheme: light;
+  --paper: #f3efe4;
+  --paper-2: #fbf8f0;
+  --paper-3: #e7e0cf;
+  --ink: #1c1b18;
+  --ink-2: #2f2c25;
+  --muted: #6d6555;
+  --rule: #ddd5c3;
+  --rule-strong: #cfc5b0;
+  --grid: #e3dccb;
+  --tick: #7a715f;
+  --dot: #b4a88e;
+  --dot-soft: #cfc5b0;
+  --sel: #a3361f;
+  --sel-soft: #ecdcd3;
+  --ci: #e3c9bd;
+  --cmp-1: #2d5a88;
+  --cmp-2: #a8781f;
+  --cmp-3: #6a4c93;
+  --cmp-4: #2f7f78;
+  --frontier: #4d7a36;
+  --flag: #efe3c4;
+  --flag-ink: #4a3f22;
+  --scrim: rgba(28, 27, 24, 0.35);
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.25);
+
+  --serif: 'Newsreader Variable', Georgia, serif;
+  --sans: 'Public Sans Variable', 'Helvetica Neue', Arial, sans-serif;
+  --gutter: 56px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --paper: #1a1916;
+    --paper-2: #22211d;
+    --paper-3: #2c2a25;
+    --ink: #ece6d6;
+    --ink-2: #d9d2c1;
+    --muted: #a39a87;
+    --rule: #34312b;
+    --rule-strong: #45413a;
+    --grid: #2b2924;
+    --tick: #8f8674;
+    --dot: #6f6756;
+    --dot-soft: #4a453b;
+    --sel: #e07a5f;
+    --sel-soft: #3a2721;
+    --ci: #5a352a;
+    --cmp-1: #7fa8d6;
+    --cmp-2: #d9a84e;
+    --cmp-3: #b39ddb;
+    --cmp-4: #6cc2b8;
+    --frontier: #93c276;
+    --flag: #3a3222;
+    --flag-ink: #ecd9a8;
+    --scrim: rgba(0, 0, 0, 0.55);
+    --shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --paper: #1a1916;
+  --paper-2: #22211d;
+  --paper-3: #2c2a25;
+  --ink: #ece6d6;
+  --ink-2: #d9d2c1;
+  --muted: #a39a87;
+  --rule: #34312b;
+  --rule-strong: #45413a;
+  --grid: #2b2924;
+  --tick: #8f8674;
+  --dot: #6f6756;
+  --dot-soft: #4a453b;
+  --sel: #e07a5f;
+  --sel-soft: #3a2721;
+  --ci: #5a352a;
+  --cmp-1: #7fa8d6;
+  --cmp-2: #d9a84e;
+  --cmp-3: #b39ddb;
+  --cmp-4: #6cc2b8;
+  --frontier: #93c276;
+  --flag: #3a3222;
+  --flag-ink: #ecd9a8;
+  --scrim: rgba(0, 0, 0, 0.55);
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+
+@media (max-width: 760px) {
+  :root {
+    --gutter: 16px;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--serif);
+  font-weight: 500;
+  margin: 0;
+  text-wrap: balance;
+}
+
+p {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+a {
+  color: inherit;
+  text-underline-offset: 2px;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--sel);
+  outline-offset: 2px;
+}
+
+.serif {
+  font-family: var(--serif);
+}
+
+.num {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.dim {
+  color: var(--muted);
+}
+
+/* Small capitals label: section heads, column heads, eyebrows. */
+.cap {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Buttons: a pill outline, a filled pill, and a link-looking one. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.btn.solid {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.btn.small {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.linkish {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--paper-3);
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pill[aria-pressed='true'],
+.pill.on {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.field {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 6px;
+  background: var(--paper-2);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.page {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+/* Phones: every control at least a fingertip tall. Text-sized buttons keep
+   their look and grow an invisible hit area instead. */
+@media (max-width: 760px) {
+  .pill,
+  .btn,
+  .btn.small,
+  .field,
+  select {
+    min-height: 34px;
+  }
+  .linkish {
+    position: relative;
+  }
+  .linkish::after {
+    content: '';
+    position: absolute;
+    inset: -9px -4px;
+  }
+}
