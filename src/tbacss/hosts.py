@@ -144,7 +144,7 @@ HOSTS: dict[str, Host] = {
     # threaded one, TBAC needed threads to mount a can, and they wrote only
     # "Canik METESFX". Picking one would be a guess dressed as a spec.
     "9mm-PS": _h(
-        "9mm pistol",
+        "9mm subsonic, Canik",
         "Ammo Inc Stelth 165gr from a Canik METE SFX pistol",
         cycling="semi",
         platform="pistol",
@@ -199,8 +199,13 @@ HOSTS: dict[str, Host] = {
         grains=55,
         subsonic=False,
     ),
+    # Almost certainly the rifle 2024 onwards calls an "AI-AX 20"" (the AXSA is
+    # the short-action AX): same ammo, and the bare-muzzle runs agree within
+    # 0.4 dB at every mic. It keeps its own code all the same, and the year in
+    # its label, because the shooter's-ear mic reads the same cans about 2 dB
+    # quieter here than on .308-20BA.
     ".308": _h(
-        '.308, 20" bolt',
+        '.308, 20" bolt (2023)',
         'LC M118LR 175gr from a 20" Accuracy International AXSA',
         barrel_in=20,
         barrel_source="report",
@@ -230,14 +235,14 @@ HOSTS: dict[str, Host] = {
         subsonic=False,
     ),
     "9mm": _h(
-        "9mm pistol",
+        "9mm, Staccato P",
         "CCI Blazer Brass 124gr from a Staccato P (factory threaded)",
         cycling="semi",
         platform="pistol",
         grains=124,
     ),
     "9mmSTTH": _h(
-        "9mm subsonic pistol",
+        "9mm subsonic, Staccato P",
         "Ammo Inc Stelth 165gr from a Staccato P",
         cycling="semi",
         platform="pistol",

@@ -93,3 +93,13 @@ def test_lookups_fall_back_to_the_code():
     assert host_label("NOT-A-HOST") == "NOT-A-HOST"
     assert host_description("NOT-A-HOST") is None
     assert host_label("5.56-16AR") == '5.56, 16" AR'
+
+
+def test_labels_are_unique():
+    """A label is all a filter list shows, so two hosts must never share one.
+
+    2023's Staccato P on 124gr and 2024's Canik on 165gr subsonic were both
+    "9mm pistol", and read 4-5 dB apart on the two cans shot on both.
+    """
+    labels = [host.label for host in HOSTS.values()]
+    assert len(labels) == len(set(labels))
