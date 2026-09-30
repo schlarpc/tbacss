@@ -16,3 +16,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # Tracks the Node major nixpkgs ships, not the newest one.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
