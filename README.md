@@ -220,54 +220,51 @@ unchanged bundle is a no-op, and a code-only push redeploys against the same
 data. A release asset replaced in place fails the build rather than silently
 changing the site.
 
-The page filters on facets and numeric ranges, plots any measure against any
-other with the Pareto frontier highlighted, and draws a run's waveforms —
-overview envelopes first, then full rate on demand with impulse and Leq
-derived in the browser. A run or shot is deep-linkable
-(`#run=20&shot=296`), and `?theme=light|dark` overrides the OS setting.
+The explorer (Svelte, under `web/src/`) is host-first: numbers only compare
+on the same gun, so it opens on the largest regular host (5.56, 16" AR) and
+the headline is the picker for any other. Within a host it ranks the field on
+any measure, with each run's ±1 standard error drawn and the leader's
+statistical tie bracketed, or plots any measure against any other with the
+Pareto frontier as a numbered staircase. A run opens as a short write-up with
+its waveform and spectrum and a **Listen** button; up to four runs compare
+side by side, their first shots overlaid and played in turn; and every
+suppressor has a page showing where it ranked on each host it was tested on.
+A view that mixes Summit years says so, because the test setup differs
+between them and the same can has measured up to 5 dB apart.
 
-The waveform card opens framed on the blast, not on the whole window. The rig
+The whole state is in the URL hash (`#host=5.56-16AR&view=trade&run=1853`,
+`#page=compare&cmp=1853,1810`, `#can=otter-creek-labs/hydrogenl`), so every
+view is a link, and links from the earlier explorer (`#run=20&shot=296`) still
+land on their run. `?theme=light|dark` overrides the OS setting.
+
+The waveform opens framed on the blast, not on the whole window. The rig
 pre-triggers and every shot in the archive arrives between about 47 and 56 ms,
-so a full-window view spends two fifths of the plot on guaranteed silence and
-leaves the event a few pixels wide. Scroll, pinch, drag or the arrow keys move
-the view; `reset zoom` returns to the run's own framing, which is widened if a
-shot's trough falls outside it. The shots of one mic are drawn as a single
-min/max band — its width is the shot-to-shot spread — and picking a shot draws
-that record at full rate on top. Impulse and Leq are marked where the report's
-method takes them from: the impulse is the largest the running integral gets
-before the trough, not where it ends up, and the Leq peak is looked for in the
-25 ms after the shot starts. A marker the reader has zoomed past is pulled to
-the edge with its time rather than dropped.
+so a full-window view spends two fifths of the plot on guaranteed silence.
+Scroll, pinch, drag or the arrow keys move the view. A mic's shots are drawn as
+one min/max band -- its width is the shot-to-shot spread -- and picking a shot
+draws it at full rate on top, with impulse and Leq marked where the report's
+method takes them from. Listen low-passes the 262 kHz capture and keeps one
+sample in five, since Web Audio only promises 8--96 kHz, and scales levels: a
+single shot to a fixed peak, a compared set by one shared factor so the quieter
+can still sounds quieter.
 
-Setting a Z axis punches the plot into 3D — drag to rotate — and the frontier
-becomes 3-objective. Direction is a property of each measure rather than a
-control: everything on the axes is a sound level or a physical dimension, so
-less is always better. A column where more is better is added by writing
-`'max'` in `MEASURES`. `year` is `null` there, meaning it is a dimension and
-not an objective, so putting it on an axis switches the frontier off instead of
-pretending 2026 dominates 2023.
+Direction is a property of each measure (`web/src/lib/measures.ts`) rather than
+a control. `year`, barrel and bullet weight are dimensions, not objectives, so
+putting one on an axis drops it from the frontier instead of pretending 2026
+dominates 2023. Suppressors are grouped across TBAC's drifting spellings by
+`tbacss.names` ("Hydrogen L" / "Hydrogen-L", "YHM" / "Yankee Hill Machine").
 
-On a phone the filter panel collapses behind a toggle so the data is above the
-fold, each dimension is its own disclosure with a count badge, the table folds
-to five columns instead of scrolling sideways, and a tap does the job hover
-does on a desktop: it selects the run _and_ leaves the readout up until the
-next tap.
-
-`scripts/ui_smoke.mjs` drives the real thing over CDP — screenshots prove it
-renders, this proves it works:
+`scripts/ui_smoke.mjs` drives the real thing over CDP -- screenshots prove it
+renders, this proves it works: host picker, filters, run write-up, Listen,
+compare, can pages, old links, the frontier rules, overflow and touch targets.
 
 ```
-python3 scripts/serve.py &
+npm run build && ln -s ../web/data dist/data
+python3 scripts/serve.py --directory dist &
 chromium --headless --remote-debugging-port=9222 --no-sandbox about:blank &
 node scripts/ui_smoke.mjs                                   # 390x844, touch
-node scripts/ui_smoke.mjs http://127.0.0.1:8765/index.html 1400 900
+node scripts/ui_smoke.mjs http://127.0.0.1:8765/index.html 1440 900
 ```
-
-The runs table lists frontier runs first by default, then the sorted column;
-the grouping is a toggle in the card header. Facets are ordered by what you do
-with them — calibers by volume, makers and hosts A-Z, since those are lists you
-look a specific name up in. Hosts sort by the name shown rather than the raw
-code, or the rendered list would look unsorted.
 
 `web/src/tbacss.ts` is the dependency-free reader underneath it: `loadBundle`,
 `selection`, `paretoFront`, `fetchRunEnvelopes`, `fetchSamples`, `decodeFrame`,
@@ -278,8 +275,8 @@ out of them — which is what lets the plots mark where a figure came from;
 matches Python:
 
 ```
-npm run check                                           # tsc, strict
-npm test                                                # filtering, Pareto, and DSP against Python
+npm run check                                           # svelte-check, strict
+npm test                                                # filtering, ranking, routes, audio, DSP against Python
 python3 scripts/make_js_fixture.py tbacss.db tests/fixture   # regenerate the fixture
 ```
 
