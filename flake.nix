@@ -435,6 +435,10 @@
 
               # Install git hooks
               ${self.checks.${system}.git-hooks.shellHook}
+
+              # Link node_modules from the store. The hook only installs itself
+              # as the shell hook when there is none, and there is one above.
+              linkNodeModulesHook
             '';
           };
 
