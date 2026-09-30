@@ -201,6 +201,25 @@ for (let k = 0; k < 40 && !/Playing shot \d · [2-9] of [2-9]/.test(caption); k+
 check('slowed playback steps through the string', /Playing shot \d · [2-9] of [2-9]/.test(caption) && caption.includes('16× slower'), caption);
 await tap('article .actions .btn.solid');
 
+// 5b. Keeping the pitch stretches each shot in a worker, one ahead of
+// playback, and plays the string the same way.
+await wait(400);
+await evaluate(`(() => {
+  const selects = document.querySelectorAll('.speed select');
+  const pitch = selects[1];
+  pitch.value = 'keep';
+  pitch.dispatchEvent(new Event('change', { bubbles: true }));
+})()`);
+await wait(200);
+await tap('article .actions .btn.solid');
+caption = '';
+for (let k = 0; k < 60 && !/Playing shot \d · [2-9] of [2-9]/.test(caption); k++) {
+  await wait(250);
+  caption = await text('article figcaption');
+}
+check('pitch-kept playback steps through the string', /Playing shot \d · [2-9] of [2-9]/.test(caption), caption);
+await tap('article .actions .btn.solid');
+
 // 6. Compare: two runs from the list, the tray, the page.
 await tap('article .actions .btn:not(.solid)');
 if (narrow) await tap('article .close');

@@ -33,6 +33,14 @@ function storedRate(): number {
   }
 }
 
+function storedKeepPitch(): boolean {
+  try {
+    return localStorage.getItem('tbacss-keep-pitch') === '1';
+  } catch {
+    return false;
+  }
+}
+
 class AppState {
   bundle = $state.raw<Bundle | null>(null);
   error = $state<string | null>(null);
@@ -43,6 +51,8 @@ class AppState {
   playing = $state<Playing | null>(null);
   /** Playback speed: 1 is real time; slower also lowers the pitch. */
   rate = $state(storedRate());
+  /** Slowed playback: stretch at the original pitch, or let the pitch drop. */
+  keepPitch = $state(storedKeepPitch());
 
   cat = $derived(this.bundle?.catalog ?? null);
 
@@ -167,6 +177,15 @@ class AppState {
     this.rate = rate;
     try {
       localStorage.setItem('tbacss-rate', String(rate));
+    } catch {
+      // private mode: the choice holds for this visit
+    }
+  }
+
+  setKeepPitch(keep: boolean) {
+    this.keepPitch = keep;
+    try {
+      localStorage.setItem('tbacss-keep-pitch', keep ? '1' : '0');
     } catch {
       // private mode: the choice holds for this visit
     }
