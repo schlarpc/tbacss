@@ -43,6 +43,7 @@ from .analysis import BAND_CENTRES, TIME_START_S, TIME_STOP_S, TIME_STOP_SHORT_S
 from .caveats import as_dicts, caveats_for
 from .derive import band_statistics, net_reduction, run_statistics
 from .hosts import HOSTS, Host
+from .names import can_key, display_names
 
 __all__ = ["ENVELOPE_BUCKETS", "PublishReport", "publish"]
 
@@ -361,6 +362,17 @@ def publish(
         caveat_dict, caveat_codes = _encode_text_column(flags)
         catalog["dictionaries"]["caveat"] = caveat_dict
         catalog["columns"]["caveat"] = caveat_codes
+
+        # Which runs are the same can, under TBAC's drifting spellings, so a
+        # viewer can show one suppressor across every host it was tested on.
+        can_dict, can_codes = _encode_text_column(
+            [can_key(r["manufacturer"], r["suppressor"]) for r in runs]
+        )
+        catalog["dictionaries"]["can"] = can_dict
+        catalog["columns"]["can"] = can_codes
+        catalog["cans"] = display_names(
+            (r["manufacturer"], r["suppressor"], r["year"]) for r in runs
+        )
 
         # -- per-shot metrics ------------------------------------------------
         shots = db.query(
