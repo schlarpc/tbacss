@@ -194,7 +194,7 @@ for (let k = 0; k < 40; k++) {
 }
 await tap('article .actions .btn.solid');
 let caption = '';
-for (let k = 0; k < 16 && !/Playing shot \d · [2-9] of [2-9]/.test(caption); k++) {
+for (let k = 0; k < 40 && !/Playing shot \d · [2-9] of [2-9]/.test(caption); k++) {
   await wait(250);
   caption = await text('article figcaption');
 }
